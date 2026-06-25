@@ -1,0 +1,152 @@
+//
+//  PDBParser.swift
+//  ProteinViz
+//
+
+import Foundation
+import simd
+
+// MARK: - Parser Errors
+
+enum PDBParserError: LocalizedError {
+    case unreadableFile
+    case noAtomsFound
+
+    var errorDescription: String? {
+        switch self {
+        case .unreadableFile:
+            return "The selected PDB file could not be read."
+        case .noAtomsFound:
+            return "No atom records were found in the PDB file."
+        }
+    }
+}
+
+// MARK: - PDB Parser
+
+struct PDBParser {
+    static func parse(from url: URL) async throws -> Protein {
+        try await Task.detached(priority: .userInitiated) {
+            let text: String
+            do {
+                text = try String(contentsOf: url, encoding: .utf8)
+            } catch {
+                throw PDBParserError.unreadableFile
+            }
+
+            let lines = text.components(separatedBy: .newlines)
+            var atoms: [Atom] = []
+            atoms.reserveCapacity(min(lines.count, 5_000))
+
+            for line in lines {
+                guard line.hasPrefix("ATOM") || line.hasPrefix("HETATM") else {
+                    continue
+                }
+
+                guard let atom = Self.parseAtom(from: line) else {
+                    continue
+                }
+
+                if atom.element.uppercased() == "H" {
+                    continue
+                }
+
+                atoms.append(atom)
+            }
+
+            guard !atoms.isEmpty else {
+                throw PDBParserError.noAtomsFound
+            }
+
+            let proteinName = url.deletingPathExtension().lastPathComponent
+            return Protein(name: proteinName, atoms: atoms)
+        }.value
+    }
+
+    // MARK: - Atom Parsing
+
+    private static func parseAtom(from line: String) -> Atom? {
+        guard
+            let serial = intField(in: line, start: 7, end: 11),
+            let name = stringField(in: line, start: 13, end: 16, preserveSpaces: false),
+            let residueName = stringField(in: line, start: 18, end: 20, preserveSpaces: false),
+            let chainChar = characterField(in: line, start: 22),
+            let residueSeq = intField(in: line, start: 23, end: 26),
+            let x = floatField(in: line, start: 31, end: 38),
+            let y = floatField(in: line, start: 39, end: 46),
+            let z = floatField(in: line, start: 47, end: 54)
+        else {
+            return nil
+        }
+
+        let elementField = stringField(in: line, start: 77, end: 78, preserveSpaces: false) ?? ""
+        let element: String
+        if !elementField.isEmpty {
+            element = elementField.uppercased()
+        } else {
+            let fallback = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            element = fallback.isEmpty ? "" : String(fallback.prefix(1)).uppercased()
+        }
+
+        return Atom(
+            serial: serial,
+            name: name,
+            residueName: residueName,
+            chainID: chainChar,
+            residueSeq: residueSeq,
+            position: SIMD3<Float>(x, y, z),
+            element: element
+        )
+    }
+
+    // MARK: - Fixed Width Helpers
+
+    private static func stringField(in line: String, start: Int, end: Int, preserveSpaces: Bool) -> String? {
+        guard let raw = substring(in: line, start: start, end: end) else {
+            return nil
+        }
+
+        let trimmed = preserveSpaces ? raw : raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func characterField(in line: String, start: Int) -> Character? {
+        guard let raw = substring(in: line, start: start, end: start) else {
+            return nil
+        }
+
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.first ?? Character(" ")
+    }
+
+    private static func intField(in line: String, start: Int, end: Int) -> Int? {
+        guard let raw = substring(in: line, start: start, end: end) else {
+            return nil
+        }
+
+        return Int(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func floatField(in line: String, start: Int, end: Int) -> Float? {
+        guard let raw = substring(in: line, start: start, end: end) else {
+            return nil
+        }
+
+        return Float(raw.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private static func substring(in line: String, start: Int, end: Int) -> String? {
+        guard start > 0, end >= start else {
+            return nil
+        }
+
+        let length = (line as NSString).length
+        guard length >= start else {
+            return nil
+        }
+
+        let startIndex = start - 1
+        let actualLength = min(end, length) - startIndex
+        return (line as NSString).substring(with: NSRange(location: startIndex, length: actualLength))
+    }
+}

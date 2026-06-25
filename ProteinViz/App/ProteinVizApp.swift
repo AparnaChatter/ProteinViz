@@ -2,10 +2,10 @@
 //  ProteinVizApp.swift
 //  ProteinViz
 //
-//  Created by Scholar on 6/24/26.
-//
 
 import SwiftUI
+
+// MARK: - App Entry Point
 
 @main
 struct ProteinVizApp: App {
