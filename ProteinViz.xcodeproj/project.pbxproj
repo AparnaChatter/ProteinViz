@@ -29,9 +29,22 @@
 		BD368A582FECCDBC00D251CD /* ProteinVizUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ProteinVizUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		BD368AE92FEF38FE00D251CD /* Exceptions for "ProteinViz" folder in "ProteinViz" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = BD368A402FECCDBA00D251CD /* ProteinViz */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		BD368A432FECCDBA00D251CD /* ProteinViz */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				BD368AE92FEF38FE00D251CD /* Exceptions for "ProteinViz" folder in "ProteinViz" target */,
+			);
 			path = ProteinViz;
 			sourceTree = "<group>";
 		};
@@ -394,6 +407,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ProteinViz/Info.plist;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "ProteinViz needs permission to save annotated screenshots to your Photos library.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -435,6 +450,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ProteinViz/Info.plist;
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "ProteinViz needs permission to save annotated screenshots to your Photos library.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
