@@ -20,6 +20,31 @@ struct FrameUniforms {
     var normalMatrix: float3x3
 }
 
+// MARK: - Phase 2 Enums
+
+enum RepresentationMode: String, CaseIterable, Identifiable {
+    case spheres = "Spheres"
+    case ribbon = "Ribbon"
+
+    var id: String { rawValue }
+}
+
+enum ColorMode: String, CaseIterable, Identifiable {
+    case cpk = "CPK"
+    case chain = "Chain"
+    case secondary = "Structure"
+
+    var id: String { rawValue }
+}
+
+// MARK: - Ribbon Vertex
+
+struct RibbonVertex {
+    var position: SIMD3<Float>
+    var normal: SIMD3<Float>
+    var color: SIMD4<Float>
+}
+
 // MARK: - Matrix Helpers
 
 extension float4x4 {

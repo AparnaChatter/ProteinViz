@@ -30,8 +30,8 @@ struct MetalView: UIViewRepresentable {
         view.isPaused = false
         view.enableSetNeedsDisplay = false
         view.framebufferOnly = true
-
-        renderer.gestureHandler = gestureHandler
+        view.clipsToBounds = true
+        view.layer.masksToBounds = true
 
         let rotatePan = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleRotate(_:)))
         rotatePan.minimumNumberOfTouches = 1
@@ -50,15 +50,13 @@ struct MetalView: UIViewRepresentable {
         view.addGestureRecognizer(panGesture)
         view.addGestureRecognizer(pinchGesture)
 
-        renderer.protein = protein
-
         return view
     }
 
     func updateUIView(_ uiView: MTKView, context: Context) {
         uiView.delegate = renderer
-        renderer.gestureHandler = gestureHandler
-        renderer.protein = protein
+        uiView.clipsToBounds = true
+        uiView.layer.masksToBounds = true
     }
 
     // MARK: - Coordinator

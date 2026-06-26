@@ -15,45 +15,47 @@ import MetalKit
 import simd
 import SwiftUI
 
-// MARK: - Representation Mode
-
-enum RepresentationMode: String, CaseIterable, Identifiable {
-    case spheres
-    case ballAndStick
-    case ribbon
-
-    var id: String { rawValue }
-
-    static var phaseOneCases: [RepresentationMode] {
-        [.spheres]
-    }
-}
-
 // MARK: - Metal Renderer
 
 final class MetalRenderer: NSObject, ObservableObject {
     @Published var protein: Protein? {
         didSet {
-            updateProteinBuffers()
+            rebuildGeometry()
         }
     }
 
-    @Published var representation: RepresentationMode = .spheres
+    @Published var representationMode: RepresentationMode = .spheres {
+        didSet {
+            rebuildGeometry()
+        }
+    }
+
+    @Published var colorMode: ColorMode = .cpk {
+        didSet {
+            rebuildGeometry()
+        }
+    }
+
+    @Published var geometryError: String?
 
     weak var gestureHandler: GestureHandler?
 
     var metalDevice: MTLDevice { device }
     private let device: MTLDevice
     private let commandQueue: MTLCommandQueue
-    private let pipelineState: MTLRenderPipelineState
+    private let spherePipelineState: MTLRenderPipelineState
+    private let ribbonPipelineState: MTLRenderPipelineState
     private let depthStencilState: MTLDepthStencilState
-    private let rasterState: MTLRenderPipelineState?
     private var instanceBuffer: MTLBuffer?
     private var instanceCount: Int = 0
     private var cameraFitDistance: Float = 10.0
     private var proteinCenter: SIMD3<Float> = .zero
     private var proteinScale: Float = 1.0
     private let radiusVisualBoost: Float = 4.0
+    private var ribbonVertexBuffer: MTLBuffer?
+    private var ribbonIndexBuffer: MTLBuffer?
+    private var ribbonIndexCount: Int = 0
+    private var geometryTask: Task<Void, Never>?
 
     // MARK: - Lifecycle
 
@@ -84,20 +86,23 @@ final class MetalRenderer: NSObject, ObservableObject {
         pipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
 
         do {
-            pipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+            spherePipelineState = try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
         } catch {
             fatalError("Failed to build the Metal render pipeline: \(error.localizedDescription)")
         }
 
-        let rasterDescriptor = MTLRenderPipelineDescriptor()
-        rasterDescriptor.label = "ProteinViz Raster State Placeholder"
-        rasterDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
-        rasterDescriptor.depthAttachmentPixelFormat = .depth32Float
-        rasterDescriptor.vertexFunction = library.makeFunction(name: "vertexSphereImpostor")
-        rasterDescriptor.fragmentFunction = library.makeFunction(name: "fragmentSphereImpostor")
-        rasterDescriptor.inputPrimitiveTopology = .triangle
-        rasterDescriptor.rasterSampleCount = 1
-        rasterState = nil
+        let ribbonPipelineDescriptor = MTLRenderPipelineDescriptor()
+        ribbonPipelineDescriptor.label = "ProteinViz Ribbon Pipeline"
+        ribbonPipelineDescriptor.vertexFunction = library.makeFunction(name: "ribbon_vertex")
+        ribbonPipelineDescriptor.fragmentFunction = library.makeFunction(name: "ribbon_fragment")
+        ribbonPipelineDescriptor.colorAttachments[0].pixelFormat = .bgra8Unorm
+        ribbonPipelineDescriptor.depthAttachmentPixelFormat = .depth32Float
+
+        do {
+            ribbonPipelineState = try device.makeRenderPipelineState(descriptor: ribbonPipelineDescriptor)
+        } catch {
+            fatalError("Failed to build the ribbon render pipeline: \(error.localizedDescription)")
+        }
 
         let depthDescriptor = MTLDepthStencilDescriptor()
         depthDescriptor.depthCompareFunction = .lessEqual
@@ -112,13 +117,18 @@ final class MetalRenderer: NSObject, ObservableObject {
 
     // MARK: - Protein Updates
 
-    private func updateProteinBuffers() {
+    private func rebuildGeometry() {
+        geometryTask?.cancel()
+
         guard let protein else {
             instanceBuffer = nil
             instanceCount = 0
             cameraFitDistance = 10.0
             proteinCenter = .zero
             proteinScale = 1.0
+            ribbonVertexBuffer = nil
+            ribbonIndexBuffer = nil
+            ribbonIndexCount = 0
             return
         }
 
@@ -126,11 +136,26 @@ final class MetalRenderer: NSObject, ObservableObject {
         let radius = max(protein.boundingBox.radius, 1.0)
         proteinScale = 1.0 / radius
         cameraFitDistance = 2.25
+        switch representationMode {
+        case .spheres:
+            updateSphereBuffers(for: protein)
+            ribbonVertexBuffer = nil
+            ribbonIndexBuffer = nil
+            ribbonIndexCount = 0
+        case .ribbon:
+            scheduleRibbonBuild(for: protein)
+            instanceBuffer = nil
+            instanceCount = 0
+        }
+    }
+
+    private func updateSphereBuffers(for protein: Protein) {
         instanceCount = protein.atoms.count
 
         let instanceData = protein.atoms.map { atom -> InstanceData in
             let centeredPosition = (atom.position - proteinCenter) * proteinScale
-            return InstanceData(position: centeredPosition, color: atom.cpkColor, radius: atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost)
+            let color = sphereColor(for: atom, in: protein)
+            return InstanceData(position: centeredPosition, color: color, radius: atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost)
         }
 
         let bufferLength = max(1, instanceData.count) * MemoryLayout<InstanceData>.stride
@@ -140,6 +165,81 @@ final class MetalRenderer: NSObject, ObservableObject {
             }
             return device.makeBuffer(bytes: baseAddress, length: bufferLength, options: .storageModeShared)
         }
+    }
+
+    private func scheduleRibbonBuild(for protein: Protein) {
+        geometryTask = Task.detached(priority: .userInitiated) { [protein, proteinCenter, proteinScale, colorMode, device] in
+            do {
+                let built = try RibbonGeometryBuilder.build(protein: protein, colorMode: colorMode)
+                if Task.isCancelled { return }
+
+                let normalizedVertices = built.vertices.map { vertex -> RibbonVertex in
+                    var copy = vertex
+                    copy.position = (copy.position - proteinCenter) * proteinScale
+                    return copy
+                }
+
+                let vertexLength = max(1, normalizedVertices.count) * MemoryLayout<RibbonVertex>.stride
+                let indexLength = max(1, built.indices.count) * MemoryLayout<UInt32>.stride
+
+                let vertexBuffer = normalizedVertices.withUnsafeBytes { rawBuffer -> MTLBuffer? in
+                    guard let baseAddress = rawBuffer.baseAddress else {
+                        return device.makeBuffer(length: vertexLength, options: .storageModeShared)
+                    }
+                    return device.makeBuffer(bytes: baseAddress, length: vertexLength, options: .storageModeShared)
+                }
+
+                let indexBuffer = built.indices.withUnsafeBytes { rawBuffer -> MTLBuffer? in
+                    guard let baseAddress = rawBuffer.baseAddress else {
+                        return device.makeBuffer(length: indexLength, options: .storageModeShared)
+                    }
+                    return device.makeBuffer(bytes: baseAddress, length: indexLength, options: .storageModeShared)
+                }
+
+                await MainActor.run {
+                    self.ribbonVertexBuffer = vertexBuffer
+                    self.ribbonIndexBuffer = indexBuffer
+                    self.ribbonIndexCount = built.indices.count
+                    self.geometryError = nil
+                }
+            } catch {
+                let message = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                await MainActor.run {
+                    self.ribbonVertexBuffer = nil
+                    self.ribbonIndexBuffer = nil
+                    self.ribbonIndexCount = 0
+                    self.geometryError = message
+                }
+            }
+        }
+    }
+
+    private func sphereColor(for atom: Atom, in protein: Protein) -> SIMD4<Float> {
+        switch colorMode {
+        case .cpk:
+            return atom.cpkColor
+        case .chain:
+            return protein.chainColors[atom.chainID] ?? atom.cpkColor
+        case .secondary:
+            return secondaryStructureColor(for: atom, in: protein)
+        }
+    }
+
+    private func secondaryStructureColor(for atom: Atom, in protein: Protein) -> SIMD4<Float> {
+        if let element = protein.secondaryStructure.first(where: {
+            $0.chainID == atom.chainID && atom.residueSeq >= $0.startResidueSeq && atom.residueSeq <= $0.endResidueSeq
+        }) {
+            switch element.type {
+            case .helix:
+                return SIMD4<Float>(1.0, 0.4, 0.4, 1.0)
+            case .sheet:
+                return SIMD4<Float>(0.4, 0.6, 1.0, 1.0)
+            case .loop:
+                return SIMD4<Float>(0.8, 0.8, 0.8, 1.0)
+            }
+        }
+
+        return SIMD4<Float>(0.8, 0.8, 0.8, 1.0)
     }
 
     // MARK: - Camera / Uniforms
@@ -196,17 +296,29 @@ extension MetalRenderer: MTKViewDelegate {
         }
 
         renderEncoder.label = "ProteinViz Render Encoder"
-        renderEncoder.setRenderPipelineState(pipelineState)
         renderEncoder.setDepthStencilState(depthStencilState)
         renderEncoder.setCullMode(.none)
 
-        if protein != nil, let instanceBuffer, instanceCount > 0 {
-            let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
-            var uniformsCopy = uniforms
-            renderEncoder.setVertexBuffer(instanceBuffer, offset: 0, index: 0)
-            renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
-            renderEncoder.setFragmentBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
-            renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: instanceCount)
+        switch representationMode {
+        case .spheres:
+            renderEncoder.setRenderPipelineState(spherePipelineState)
+            if protein != nil, let instanceBuffer, instanceCount > 0 {
+                let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
+                var uniformsCopy = uniforms
+                renderEncoder.setVertexBuffer(instanceBuffer, offset: 0, index: 0)
+                renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                renderEncoder.setFragmentBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: instanceCount)
+            }
+        case .ribbon:
+            renderEncoder.setRenderPipelineState(ribbonPipelineState)
+            if let ribbonVertexBuffer, let ribbonIndexBuffer, ribbonIndexCount > 0 {
+                let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
+                var uniformsCopy = uniforms
+                renderEncoder.setVertexBuffer(ribbonVertexBuffer, offset: 0, index: 0)
+                renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: ribbonIndexCount, indexType: .uint32, indexBuffer: ribbonIndexBuffer, indexBufferOffset: 0)
+            }
         }
 
         renderEncoder.endEncoding()

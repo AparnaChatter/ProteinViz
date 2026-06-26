@@ -102,3 +102,50 @@ fragment float4 fragmentSphereImpostor(VertexOut in [[stage_in]],
     float3 litColor = in.color.rgb * lighting + float3(specular);
     return float4(saturate(litColor), in.color.a);
 }
+
+// MARK: - Ribbon Types
+
+struct RibbonVertex {
+    float3 position;
+    float3 normal;
+    float4 color;
+};
+
+struct RibbonVertexOut {
+    float4 position [[position]];
+    float3 viewNormal;
+    float3 viewPosition;
+    float4 color;
+};
+
+constant float kRibbonAmbient = 0.25f;
+constant float kRibbonDiffuse = 0.75f;
+
+// MARK: - Ribbon Vertex Shader
+
+vertex RibbonVertexOut ribbon_vertex(uint vertexID [[vertex_id]],
+                                     const device RibbonVertex *vertices [[buffer(0)]],
+                                     constant FrameUniforms &uniforms [[buffer(1)]]) {
+    RibbonVertexOut out;
+    RibbonVertex vertex_in = vertices[vertexID];
+
+    float4 worldPosition = uniforms.modelMatrix * float4(vertex_in.position, 1.0);
+    float4 viewPosition = uniforms.viewMatrix * worldPosition;
+    out.position = uniforms.projectionMatrix * viewPosition;
+    out.viewPosition = viewPosition.xyz;
+    out.viewNormal = normalize(uniforms.normalMatrix * vertex_in.normal);
+    out.color = vertex_in.color;
+    return out;
+}
+
+// MARK: - Ribbon Fragment Shader
+
+fragment float4 ribbon_fragment(RibbonVertexOut in [[stage_in]]) {
+    float3 normal = normalize(in.viewNormal);
+    // Double-sided lighting so the inside of the ribbon doesn't appear black
+    float diffuse = abs(dot(normal, kLightDirection)) * kRibbonDiffuse;
+    float lighting = kRibbonAmbient + diffuse;
+
+    float3 litColor = in.color.rgb * lighting;
+    return float4(saturate(litColor), in.color.a);
+}

@@ -102,7 +102,7 @@ struct SidebarView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(entry.name)
                             .font(.headline)
-                        Text("\(entry.protein.atomCount) atoms")
+                        Text(entry.protein.pdbID ?? "\(entry.protein.atomCount) atoms")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
