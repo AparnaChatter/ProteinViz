@@ -8,19 +8,19 @@ import simd
 
 // MARK: - Bounding Box
 
-struct ProteinBoundingBox: Hashable {
+struct ProteinBoundingBox: Hashable, Sendable {
     let minimum: SIMD3<Float>
     let maximum: SIMD3<Float>
 
-    var center: SIMD3<Float> {
+    nonisolated var center: SIMD3<Float> {
         (minimum + maximum) * 0.5
     }
 
-    var size: SIMD3<Float> {
+    nonisolated var size: SIMD3<Float> {
         maximum - minimum
     }
 
-    var radius: Float {
+    nonisolated var radius: Float {
         max(size.x, max(size.y, size.z)) * 0.5
     }
 }
@@ -58,7 +58,7 @@ struct Protein: Hashable {
 // MARK: - Protein Construction
 
 extension Protein {
-    init(name: String, pdbID: String? = nil, atoms: [Atom], secondaryStructure: [SecondaryStructureElement] = []) {
+    nonisolated init(name: String, pdbID: String? = nil, atoms: [Atom], secondaryStructure: [SecondaryStructureElement] = []) {
         if let firstAtom = atoms.first {
             var minimum = firstAtom.position
             var maximum = firstAtom.position

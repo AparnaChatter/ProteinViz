@@ -11,6 +11,7 @@ struct ContentView: View {
     @StateObject private var libraryViewModel = ProteinLibraryViewModel()
     @StateObject private var gestureHandler = GestureHandler()
     @StateObject private var renderer = MetalRenderer()
+    @StateObject private var annotationStore = AnnotationStore()
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +21,8 @@ struct ContentView: View {
                 ProteinDetailView(
                     protein: protein,
                     renderer: renderer,
-                    gestureHandler: gestureHandler
+                    gestureHandler: gestureHandler,
+                    annotationStore: annotationStore
                 )
             } else {
                 placeholderView

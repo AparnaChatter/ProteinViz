@@ -10,10 +10,12 @@
 
 import Foundation
 import Combine
+import CoreImage
 import Metal
 import MetalKit
 import simd
 import SwiftUI
+import UIKit
 
 // MARK: - Metal Renderer
 
@@ -56,6 +58,9 @@ final class MetalRenderer: NSObject, ObservableObject {
     private var ribbonIndexBuffer: MTLBuffer?
     private var ribbonIndexCount: Int = 0
     private var geometryTask: Task<Void, Never>?
+    private var pendingScreenshot: (@Sendable (UIImage?) -> Void)?
+    private var lastDrawableSize: CGSize = .zero
+    private lazy var ciContext: CIContext = CIContext(mtlDevice: device)
 
     // MARK: - Lifecycle
 
@@ -278,6 +283,132 @@ final class MetalRenderer: NSObject, ObservableObject {
             normalMatrix: normalMatrix
         )
     }
+
+    // MARK: - Picking
+
+    /// The result of ray-picking an atom from a tap location.
+    struct PickedAtom {
+        let atom: Atom
+        let normalizedPosition: SIMD3<Float>
+    }
+
+    /// Casts a ray from the given screen point and returns the nearest atom (if any).
+    /// `viewSize` is in points; pixel/point distinction doesn't affect the aspect ratio used
+    /// for projection, so this works for both SwiftUI overlays and UIKit hit-tests.
+    func pickAtom(at screenPoint: CGPoint, viewSize: CGSize) -> PickedAtom? {
+        guard let protein else { return nil }
+        guard viewSize.width > 0, viewSize.height > 0 else { return nil }
+
+        let uniforms = makeFrameUniforms(drawableSize: viewSize)
+        let mvp = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix
+        let invMVP = mvp.inverse
+
+        let ndcX = Float((screenPoint.x / viewSize.width) * 2.0 - 1.0)
+        let ndcY = Float(1.0 - (screenPoint.y / viewSize.height) * 2.0)
+
+        let nearH = invMVP * SIMD4<Float>(ndcX, ndcY, 0.0, 1.0)
+        let farH  = invMVP * SIMD4<Float>(ndcX, ndcY, 1.0, 1.0)
+        guard nearH.w != 0, farH.w != 0 else { return nil }
+
+        let nearW = SIMD3<Float>(nearH.x, nearH.y, nearH.z) / nearH.w
+        let farW  = SIMD3<Float>(farH.x, farH.y, farH.z) / farH.w
+        let rayOrigin = nearW
+        let rayDir = simd_normalize(farW - nearW)
+        let rayDirDot = simd_dot(rayDir, rayDir)
+        guard rayDirDot > 0 else { return nil }
+
+        let pickRadiusBoost: Float = 1.4
+        var closestT: Float = .greatestFiniteMagnitude
+        var picked: PickedAtom?
+
+        for atom in protein.atoms {
+            let p = (atom.position - proteinCenter) * proteinScale
+            let r = atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost * pickRadiusBoost
+
+            let oc = rayOrigin - p
+            let b = simd_dot(oc, rayDir)
+            let c = simd_dot(oc, oc) - r * r
+            let disc = b * b - rayDirDot * c
+            guard disc >= 0 else { continue }
+            let sqrtDisc = sqrt(disc)
+            let t = (-b - sqrtDisc) / rayDirDot
+            if t > 0, t < closestT {
+                closestT = t
+                picked = PickedAtom(atom: atom, normalizedPosition: p)
+            }
+        }
+        return picked
+    }
+
+    /// Projects a position in normalized protein space to a screen point, or nil if behind the camera / off-screen in depth.
+    func projectToScreen(normalizedWorldPosition: SIMD3<Float>, viewSize: CGSize) -> CGPoint? {
+        guard viewSize.width > 0, viewSize.height > 0 else { return nil }
+        let uniforms = makeFrameUniforms(drawableSize: viewSize)
+        let mvp = uniforms.projectionMatrix * uniforms.viewMatrix * uniforms.modelMatrix
+        let clip = mvp * SIMD4<Float>(normalizedWorldPosition.x, normalizedWorldPosition.y, normalizedWorldPosition.z, 1.0)
+        guard clip.w > 0 else { return nil }
+
+        let ndcX = clip.x / clip.w
+        let ndcY = clip.y / clip.w
+        let ndcZ = clip.z / clip.w
+        guard ndcZ >= 0, ndcZ <= 1 else { return nil }
+
+        let screenX = (CGFloat(ndcX) + 1.0) * 0.5 * viewSize.width
+        let screenY = (1.0 - CGFloat(ndcY)) * 0.5 * viewSize.height
+        return CGPoint(x: screenX, y: screenY)
+    }
+
+    // MARK: - Screenshot Capture
+
+    /// Captures the next rendered frame as a UIImage.
+    /// Completion fires on the main queue. Only one screenshot may be in flight at a time.
+    @MainActor
+    func captureScreenshot(_ completion: @escaping @Sendable (UIImage?) -> Void) {
+        pendingScreenshot = completion
+    }
+
+    private func makeUIImage(from texture: MTLTexture) -> UIImage? {
+        let width = texture.width
+        let height = texture.height
+        guard width > 0, height > 0 else { return nil }
+
+        let bytesPerPixel = 4
+        let bytesPerRow = width * bytesPerPixel
+        let totalBytes = bytesPerRow * height
+
+        var raw = [UInt8](repeating: 0, count: totalBytes)
+        raw.withUnsafeMutableBytes { buffer in
+            guard let base = buffer.baseAddress else { return }
+            texture.getBytes(
+                base,
+                bytesPerRow: bytesPerRow,
+                from: MTLRegionMake2D(0, 0, width, height),
+                mipmapLevel: 0
+            )
+        }
+
+        // Drawable is BGRA8Unorm. The bitmap info below tells Core Graphics to read
+        // the bytes as little-endian 32-bit ARGB, which matches in-memory BGRA byte order.
+        let bitmapInfo: CGBitmapInfo = [
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue),
+            CGBitmapInfo.byteOrder32Little
+        ]
+        guard let provider = CGDataProvider(data: NSData(bytes: raw, length: totalBytes)) else { return nil }
+        guard let cgImage = CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
 }
 
 // MARK: - MTKViewDelegate
@@ -322,6 +453,54 @@ extension MetalRenderer: MTKViewDelegate {
         }
 
         renderEncoder.endEncoding()
+
+        // Optional screenshot capture: blit the drawable into a CPU-readable texture
+        // before presenting, then convert to UIImage on completion.
+        if let completion = pendingScreenshot {
+            pendingScreenshot = nil
+            let drawableTexture = drawable.texture
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: drawableTexture.pixelFormat,
+                width: drawableTexture.width,
+                height: drawableTexture.height,
+                mipmapped: false
+            )
+            descriptor.storageMode = .shared
+            // Leave usage as default (.unknown) so the texture is valid as a blit destination
+            // AND readable on the CPU.
+            if let captureTexture = device.makeTexture(descriptor: descriptor),
+               let blit = commandBuffer.makeBlitCommandEncoder() {
+                blit.copy(
+                    from: drawableTexture,
+                    sourceSlice: 0,
+                    sourceLevel: 0,
+                    sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+                    sourceSize: MTLSize(width: drawableTexture.width, height: drawableTexture.height, depth: 1),
+                    to: captureTexture,
+                    destinationSlice: 0,
+                    destinationLevel: 0,
+                    destinationOrigin: MTLOrigin(x: 0, y: 0, z: 0)
+                )
+                blit.endEncoding()
+                commandBuffer.addCompletedHandler { [weak self] buffer in
+                    // Always finish on the main actor: makeUIImage is MainActor-isolated and
+                    // the SwiftUI completion expects to be invoked on main.
+                    let status = buffer.status
+                    let texture = captureTexture
+                    Task { @MainActor [weak self] in
+                        guard status == .completed else {
+                            completion(nil)
+                            return
+                        }
+                        let image = self?.makeUIImage(from: texture)
+                        completion(image)
+                    }
+                }
+            } else {
+                Task { @MainActor in completion(nil) }
+            }
+        }
+
         commandBuffer.present(drawable)
         commandBuffer.commit()
     }

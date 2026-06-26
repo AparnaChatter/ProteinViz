@@ -13,9 +13,10 @@ struct MetalView: UIViewRepresentable {
     let protein: Protein?
     let renderer: MetalRenderer
     let gestureHandler: GestureHandler
+    var onTap: ((CGPoint, CGSize) -> Void)?
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(gestureHandler: gestureHandler)
+        Coordinator(gestureHandler: gestureHandler, onTap: onTap)
     }
 
     func makeUIView(context: Context) -> MTKView {
@@ -29,7 +30,8 @@ struct MetalView: UIViewRepresentable {
         view.autoResizeDrawable = true
         view.isPaused = false
         view.enableSetNeedsDisplay = false
-        view.framebufferOnly = true
+        // Enable texture read-back so MetalRenderer can capture screenshots via blit.
+        view.framebufferOnly = false
         view.clipsToBounds = true
         view.layer.masksToBounds = true
 
@@ -46,9 +48,14 @@ struct MetalView: UIViewRepresentable {
         let pinchGesture = UIPinchGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePinch(_:)))
         pinchGesture.delegate = context.coordinator
 
+        let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+        tapGesture.numberOfTapsRequired = 1
+        tapGesture.delegate = context.coordinator
+
         view.addGestureRecognizer(rotatePan)
         view.addGestureRecognizer(panGesture)
         view.addGestureRecognizer(pinchGesture)
+        view.addGestureRecognizer(tapGesture)
 
         return view
     }
@@ -57,15 +64,18 @@ struct MetalView: UIViewRepresentable {
         uiView.delegate = renderer
         uiView.clipsToBounds = true
         uiView.layer.masksToBounds = true
+        context.coordinator.onTap = onTap
     }
 
     // MARK: - Coordinator
 
     final class Coordinator: NSObject, UIGestureRecognizerDelegate {
         private let gestureHandler: GestureHandler
+        var onTap: ((CGPoint, CGSize) -> Void)?
 
-        init(gestureHandler: GestureHandler) {
+        init(gestureHandler: GestureHandler, onTap: ((CGPoint, CGSize) -> Void)?) {
             self.gestureHandler = gestureHandler
+            self.onTap = onTap
         }
 
         @objc func handleRotate(_ recognizer: UIPanGestureRecognizer) {
@@ -89,7 +99,14 @@ struct MetalView: UIViewRepresentable {
             recognizer.scale = 1.0
         }
 
+        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
+            guard let view = recognizer.view, recognizer.state == .ended else { return }
+            let location = recognizer.location(in: view)
+            onTap?(location, view.bounds.size)
+        }
+
         func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            // Allow tap to coexist with pan/pinch — a true tap (no movement) fires only the tap.
             true
         }
     }

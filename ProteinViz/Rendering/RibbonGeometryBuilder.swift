@@ -27,7 +27,7 @@ struct RibbonGeometryBuilder {
         let normal: SIMD2<Float>
     }
 
-    static func build(protein: Protein, colorMode: ColorMode) throws -> (vertices: [RibbonVertex], indices: [UInt32]) {
+    nonisolated static func build(protein: Protein, colorMode: ColorMode) throws -> (vertices: [RibbonVertex], indices: [UInt32]) {
         guard protein.backboneAtoms.count >= 2 else {
             throw RibbonGeometryError.insufficientBackbone
         }
@@ -125,7 +125,7 @@ struct RibbonGeometryBuilder {
 
     // MARK: - Spline
 
-    private static func buildPolylinePoints(controlPoints: [SIMD3<Float>], subdivisions: Int) -> [SIMD3<Float>] {
+    nonisolated private static func buildPolylinePoints(controlPoints: [SIMD3<Float>], subdivisions: Int) -> [SIMD3<Float>] {
         guard controlPoints.count >= 2 else { return controlPoints }
         var points: [SIMD3<Float>] = []
 
@@ -147,7 +147,7 @@ struct RibbonGeometryBuilder {
         return points
     }
 
-    private static func catmullRom(_ p0: SIMD3<Float>, _ p1: SIMD3<Float>, _ p2: SIMD3<Float>, _ p3: SIMD3<Float>, t: Float) -> SIMD3<Float> {
+    nonisolated private static func catmullRom(_ p0: SIMD3<Float>, _ p1: SIMD3<Float>, _ p2: SIMD3<Float>, _ p3: SIMD3<Float>, t: Float) -> SIMD3<Float> {
         let t2: Float = t * t
         let t3: Float = t2 * t
 
@@ -173,14 +173,14 @@ struct RibbonGeometryBuilder {
 
     // MARK: - Frames
 
-    private static func initialBinormal(for tangent: SIMD3<Float>) -> SIMD3<Float> {
+    nonisolated private static func initialBinormal(for tangent: SIMD3<Float>) -> SIMD3<Float> {
         let reference: SIMD3<Float> = abs(tangent.y) > 0.9 ? SIMD3<Float>(1, 0, 0) : SIMD3<Float>(0, 1, 0)
         return simd_normalize(simd_cross(tangent, reference))
     }
 
     /// Rotates the previous binormal minimally so it remains perpendicular to the new tangent,
     /// eliminating the twist artifacts of recomputing the frame from scratch per segment.
-    private static func parallelTransport(previousBinormal: SIMD3<Float>, tangent: SIMD3<Float>) -> SIMD3<Float> {
+    nonisolated private static func parallelTransport(previousBinormal: SIMD3<Float>, tangent: SIMD3<Float>) -> SIMD3<Float> {
         var candidate = previousBinormal - simd_dot(previousBinormal, tangent) * tangent
         let length = simd_length(candidate)
         if length < 0.0001 {
@@ -193,7 +193,7 @@ struct RibbonGeometryBuilder {
 
     // MARK: - Secondary Structure Lookup
 
-    private static func structureType(for chainID: Character, residueSeq: Int, structures: [SecondaryStructureElement]) -> SecondaryStructureType {
+    nonisolated private static func structureType(for chainID: Character, residueSeq: Int, structures: [SecondaryStructureElement]) -> SecondaryStructureType {
         if let match = structures.first(where: { $0.chainID == chainID && residueSeq >= $0.startResidueSeq && residueSeq <= $0.endResidueSeq }) {
             return match.type
         }
@@ -202,7 +202,7 @@ struct RibbonGeometryBuilder {
 
     // MARK: - Color
 
-    private static func color(for type: SecondaryStructureType, chainID: Character, protein: Protein, mode: ColorMode) -> SIMD4<Float> {
+    nonisolated private static func color(for type: SecondaryStructureType, chainID: Character, protein: Protein, mode: ColorMode) -> SIMD4<Float> {
         switch mode {
         case .cpk:
             // CPK is element-based and meaningless per-residue, so fall back to a neutral ribbon tint
@@ -224,7 +224,7 @@ struct RibbonGeometryBuilder {
     /// Positions are in [-1, 1] and get scaled by width/height when extruded.
     /// Sheets use duplicated corner vertices with face-aligned normals so the ribbon faces
     /// shade flat. Helices use a smooth ellipse; loops use a smooth circle.
-    private static func profilePoints(for type: SecondaryStructureType) -> [ProfilePoint] {
+    nonisolated private static func profilePoints(for type: SecondaryStructureType) -> [ProfilePoint] {
         switch type {
         case .helix:
             // Elliptical cross-section, smooth normals
@@ -264,7 +264,7 @@ struct RibbonGeometryBuilder {
     // MARK: - Cross-section size
 
     /// Half-extent along the in-plane (normal) axis, in Angstroms.
-    private static func sectionWidth(for type: SecondaryStructureType) -> Float {
+    nonisolated private static func sectionWidth(for type: SecondaryStructureType) -> Float {
         switch type {
         case .helix: return 0.9
         case .sheet: return 1.1
@@ -273,7 +273,7 @@ struct RibbonGeometryBuilder {
     }
 
     /// Half-extent along the out-of-plane (binormal) axis, in Angstroms.
-    private static func sectionHeight(for type: SecondaryStructureType) -> Float {
+    nonisolated private static func sectionHeight(for type: SecondaryStructureType) -> Float {
         switch type {
         case .helix: return 0.28
         case .sheet: return 0.18
