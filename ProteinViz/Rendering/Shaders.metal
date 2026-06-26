@@ -78,8 +78,13 @@ vertex VertexOut vertexSphereImpostor(uint vertexID [[vertex_id]],
 
 // MARK: - Fragment Shader
 
-fragment float4 fragmentSphereImpostor(VertexOut in [[stage_in]],
-                                       constant FrameUniforms &uniforms [[buffer(1)]]) {
+struct SphereFragmentOut {
+    float4 color [[color(0)]];
+    float depth [[depth(any)]];
+};
+
+fragment SphereFragmentOut fragmentSphereImpostor(VertexOut in [[stage_in]],
+                                                  constant FrameUniforms &uniforms [[buffer(1)]]) {
     float radius = max(in.radius, 0.0001f);
     float2 normalizedXY = in.offsetView / radius;
     float dist2 = dot(normalizedXY, normalizedXY);
@@ -100,7 +105,15 @@ fragment float4 fragmentSphereImpostor(VertexOut in [[stage_in]],
     float lighting = kAmbientStrength + diffuse;
 
     float3 litColor = in.color.rgb * lighting + float3(specular);
-    return float4(saturate(litColor), in.color.a);
+
+    // Per-pixel depth correction: write the sphere surface's depth rather than the
+    // billboard quad's depth so overlapping atoms occlude each other correctly.
+    float4 clipPosition = uniforms.projectionMatrix * float4(viewPosition, 1.0);
+
+    SphereFragmentOut out;
+    out.color = float4(saturate(litColor), in.color.a);
+    out.depth = clipPosition.z / clipPosition.w;
+    return out;
 }
 
 // MARK: - Ribbon Types
@@ -118,8 +131,11 @@ struct RibbonVertexOut {
     float4 color;
 };
 
-constant float kRibbonAmbient = 0.25f;
-constant float kRibbonDiffuse = 0.75f;
+constant float kRibbonAmbient = 0.22f;
+constant float kRibbonDiffuse = 0.65f;
+constant float kRibbonSpecular = 0.25f;
+constant float kRibbonShininess = 28.0f;
+constant float kRibbonRim = 0.18f;
 
 // MARK: - Ribbon Vertex Shader
 
@@ -141,11 +157,19 @@ vertex RibbonVertexOut ribbon_vertex(uint vertexID [[vertex_id]],
 // MARK: - Ribbon Fragment Shader
 
 fragment float4 ribbon_fragment(RibbonVertexOut in [[stage_in]]) {
-    float3 normal = normalize(in.viewNormal);
-    // Double-sided lighting so the inside of the ribbon doesn't appear black
-    float diffuse = abs(dot(normal, kLightDirection)) * kRibbonDiffuse;
-    float lighting = kRibbonAmbient + diffuse;
+    // Double-sided lighting so the inside of the ribbon doesn't appear black.
+    float3 rawNormal = normalize(in.viewNormal);
+    float3 viewDir = normalize(-in.viewPosition);
+    float3 normal = dot(rawNormal, viewDir) < 0.0f ? -rawNormal : rawNormal;
 
-    float3 litColor = in.color.rgb * lighting;
+    float NdotL = max(dot(normal, kLightDirection), 0.0f);
+    float diffuse = NdotL * kRibbonDiffuse;
+
+    float3 halfVector = normalize(kLightDirection + viewDir);
+    float specular = pow(max(dot(normal, halfVector), 0.0f), kRibbonShininess) * kRibbonSpecular;
+
+    float rim = pow(1.0f - max(dot(normal, viewDir), 0.0f), 2.5f) * kRibbonRim;
+
+    float3 litColor = in.color.rgb * (kRibbonAmbient + diffuse + rim) + float3(specular);
     return float4(saturate(litColor), in.color.a);
 }

@@ -22,59 +22,99 @@ enum RibbonGeometryError: LocalizedError {
 // MARK: - Ribbon Geometry Builder
 
 struct RibbonGeometryBuilder {
+    private struct ProfilePoint {
+        let position: SIMD2<Float>
+        let normal: SIMD2<Float>
+    }
+
     static func build(protein: Protein, colorMode: ColorMode) throws -> (vertices: [RibbonVertex], indices: [UInt32]) {
         guard protein.backboneAtoms.count >= 2 else {
             throw RibbonGeometryError.insufficientBackbone
         }
 
         let splineSubdivisions = 8
+        let profileCount = 8
         let chainGroups = Dictionary(grouping: protein.backboneAtoms, by: { $0.chainID })
         var vertices: [RibbonVertex] = []
         var indices: [UInt32] = []
-        vertices.reserveCapacity(protein.backboneAtoms.count * splineSubdivisions * 8)
+        vertices.reserveCapacity(protein.backboneAtoms.count * splineSubdivisions * profileCount)
 
         var vertexBase: UInt32 = 0
         for chainID in chainGroups.keys.sorted() {
-            let chainAtoms = chainGroups[chainID]!.sorted { $0.residueSeq < $1.residueSeq }
+            guard let group = chainGroups[chainID] else { continue }
+            let chainAtoms = group.sorted { $0.residueSeq < $1.residueSeq }
             guard chainAtoms.count >= 2 else { continue }
 
             let controlPoints = chainAtoms.map(\.position)
-            let chainSegments = buildPolylinePoints(controlPoints: controlPoints, subdivisions: splineSubdivisions)
-            guard chainSegments.count >= 2 else { continue }
+            let splinePoints = buildPolylinePoints(controlPoints: controlPoints, subdivisions: splineSubdivisions)
+            guard splinePoints.count >= 2 else { continue }
 
-            for index in 0..<(chainSegments.count - 1) {
-                let current = chainSegments[index]
-                let next = chainSegments[index + 1]
-                let tangent = simd_normalize(next - current)
-                let referenceUp = abs(tangent.y) > 0.9 ? SIMD3<Float>(1, 0, 0) : SIMD3<Float>(0, 1, 0)
-                let binormal = simd_normalize(simd_cross(tangent, referenceUp))
-                let normal = simd_normalize(simd_cross(binormal, tangent))
+            // Chain-local indices of residues that mark the C-terminal end of a sheet
+            var sheetEndResidueIndices = Set<Int>()
+            for element in protein.secondaryStructure where element.type == .sheet && element.chainID == chainID {
+                if let endIdx = chainAtoms.firstIndex(where: { $0.residueSeq == element.endResidueSeq }) {
+                    sheetEndResidueIndices.insert(endIdx)
+                }
+            }
 
-                let sectionType = structureType(for: chainID, residueSeq: chainAtoms[min(index / splineSubdivisions, chainAtoms.count - 1)].residueSeq, structures: protein.secondaryStructure)
-                let sectionColor = color(for: sectionType, chainID: chainID, protein: protein, mode: colorMode)
-                let profile = profilePoints(for: sectionType)
-                let sectionWidth = sectionWidth(for: sectionType)
-                let sectionHeight = sectionHeight(for: sectionType)
+            // Parallel-transport frame seed
+            let seedTangent = simd_normalize(splinePoints[1] - splinePoints[0])
+            var previousBinormal = initialBinormal(for: seedTangent)
 
-                let ringStart = vertexBase
-                for point in profile {
-                    let offset = normal * (point.x * sectionWidth) + binormal * (point.y * sectionHeight)
-                    vertices.append(RibbonVertex(position: current + offset, normal: simd_normalize(offset == .zero ? normal : offset), color: sectionColor))
-                    vertexBase += 1
+            // Emit a ring at every spline point except the last (we need a forward tangent)
+            let ringCount = splinePoints.count - 1
+            for index in 0..<ringCount {
+                let current = splinePoints[index]
+                let tangent = simd_normalize(splinePoints[index + 1] - current)
+
+                let binormal = parallelTransport(previousBinormal: previousBinormal, tangent: tangent)
+                let normalAxis = simd_normalize(simd_cross(binormal, tangent))
+                previousBinormal = binormal
+
+                // Determine which residue (chain-local) and SS type this spline point belongs to
+                let residueIndex = min(index / splineSubdivisions, chainAtoms.count - 1)
+                let residueSeq = chainAtoms[residueIndex].residueSeq
+                let sectionType = structureType(for: chainID, residueSeq: residueSeq, structures: protein.secondaryStructure)
+
+                // Sheet arrow taper: at the last residue of each sheet, widen at the base
+                // and taper to a point at the C-terminal end.
+                var widthScale = sectionWidth(for: sectionType)
+                let heightScale = sectionHeight(for: sectionType)
+                if sectionType == .sheet, sheetEndResidueIndices.contains(residueIndex) {
+                    let intraResidue = Float(index % splineSubdivisions) / Float(splineSubdivisions)
+                    let arrowBaseFactor: Float = 1.8
+                    widthScale = sectionWidth(for: .sheet) * arrowBaseFactor * (1.0 - intraResidue)
                 }
 
-                // connect rings as degenerate quads in a simple strip-like layout
+                let sectionColor = color(for: sectionType, chainID: chainID, protein: protein, mode: colorMode)
+                let profile = profilePoints(for: sectionType)
+                let ringStart = vertexBase
+
+                for sample in profile {
+                    let offset = normalAxis * (sample.position.x * widthScale) + binormal * (sample.position.y * heightScale)
+                    let rawNormal = normalAxis * sample.normal.x + binormal * sample.normal.y
+                    let worldNormal: SIMD3<Float>
+                    if simd_length(rawNormal) > 0.0001 {
+                        worldNormal = simd_normalize(rawNormal)
+                    } else {
+                        worldNormal = normalAxis
+                    }
+                    vertices.append(RibbonVertex(position: current + offset, normal: worldNormal, color: sectionColor))
+                }
+                vertexBase += UInt32(profileCount)
+
+                // Connect this ring to the previous ring (in the same chain only)
                 if index > 0 {
-                    let previousStart = ringStart - UInt32(profile.count)
-                    for i in 0..<profile.count {
-                        let nextIndex = (i + 1) % profile.count
+                    let previousStart = ringStart - UInt32(profileCount)
+                    for i in 0..<profileCount {
+                        let nextI = (i + 1) % profileCount
                         indices.append(previousStart + UInt32(i))
                         indices.append(ringStart + UInt32(i))
-                        indices.append(ringStart + UInt32(nextIndex))
+                        indices.append(ringStart + UInt32(nextI))
 
                         indices.append(previousStart + UInt32(i))
-                        indices.append(ringStart + UInt32(nextIndex))
-                        indices.append(previousStart + UInt32(nextIndex))
+                        indices.append(ringStart + UInt32(nextI))
+                        indices.append(previousStart + UInt32(nextI))
                     }
                 }
             }
@@ -83,7 +123,7 @@ struct RibbonGeometryBuilder {
         return (vertices, indices)
     }
 
-    // MARK: - Helpers
+    // MARK: - Spline
 
     private static func buildPolylinePoints(controlPoints: [SIMD3<Float>], subdivisions: Int) -> [SIMD3<Float>] {
         guard controlPoints.count >= 2 else { return controlPoints }
@@ -131,6 +171,28 @@ struct RibbonGeometryBuilder {
         return Float(0.5) * sum
     }
 
+    // MARK: - Frames
+
+    private static func initialBinormal(for tangent: SIMD3<Float>) -> SIMD3<Float> {
+        let reference: SIMD3<Float> = abs(tangent.y) > 0.9 ? SIMD3<Float>(1, 0, 0) : SIMD3<Float>(0, 1, 0)
+        return simd_normalize(simd_cross(tangent, reference))
+    }
+
+    /// Rotates the previous binormal minimally so it remains perpendicular to the new tangent,
+    /// eliminating the twist artifacts of recomputing the frame from scratch per segment.
+    private static func parallelTransport(previousBinormal: SIMD3<Float>, tangent: SIMD3<Float>) -> SIMD3<Float> {
+        var candidate = previousBinormal - simd_dot(previousBinormal, tangent) * tangent
+        let length = simd_length(candidate)
+        if length < 0.0001 {
+            candidate = initialBinormal(for: tangent)
+        } else {
+            candidate /= length
+        }
+        return candidate
+    }
+
+    // MARK: - Secondary Structure Lookup
+
     private static func structureType(for chainID: Character, residueSeq: Int, structures: [SecondaryStructureElement]) -> SecondaryStructureType {
         if let match = structures.first(where: { $0.chainID == chainID && residueSeq >= $0.startResidueSeq && residueSeq <= $0.endResidueSeq }) {
             return match.type
@@ -138,42 +200,84 @@ struct RibbonGeometryBuilder {
         return .loop
     }
 
+    // MARK: - Color
+
     private static func color(for type: SecondaryStructureType, chainID: Character, protein: Protein, mode: ColorMode) -> SIMD4<Float> {
         switch mode {
         case .cpk:
-            return SIMD4<Float>(0.7, 0.7, 0.7, 1)
+            // CPK is element-based and meaningless per-residue, so fall back to a neutral ribbon tint
+            return SIMD4<Float>(0.78, 0.78, 0.82, 1)
         case .chain:
             return protein.chainColors[chainID] ?? SIMD4<Float>(0.7, 0.7, 0.7, 1)
         case .secondary:
             switch type {
             case .helix: return SIMD4<Float>(1.0, 0.4, 0.4, 1)
             case .sheet: return SIMD4<Float>(0.4, 0.6, 1.0, 1)
-            case .loop: return SIMD4<Float>(0.8, 0.8, 0.8, 1)
+            case .loop: return SIMD4<Float>(0.85, 0.85, 0.85, 1)
             }
         }
     }
 
-    private static func profilePoints(for type: SecondaryStructureType) -> [SIMD2<Float>] {
-        let sides = 8
-        return (0..<sides).map { i in
-            let angle = (Float(i) / Float(sides)) * 2 * .pi
-            return SIMD2<Float>(cos(angle), sin(angle))
+    // MARK: - Cross-section profiles
+
+    /// Returns 8 vertices around a unit cross-section profile shaped for the given SS type.
+    /// Positions are in [-1, 1] and get scaled by width/height when extruded.
+    /// Sheets use duplicated corner vertices with face-aligned normals so the ribbon faces
+    /// shade flat. Helices use a smooth ellipse; loops use a smooth circle.
+    private static func profilePoints(for type: SecondaryStructureType) -> [ProfilePoint] {
+        switch type {
+        case .helix:
+            // Elliptical cross-section, smooth normals
+            return (0..<8).map { i in
+                let angle = Float(i) / Float(8) * 2.0 * .pi
+                let c = cos(angle)
+                let s = sin(angle)
+                return ProfilePoint(position: SIMD2<Float>(c, s), normal: SIMD2<Float>(c, s))
+            }
+        case .sheet:
+            // Rectangular cross-section with sharp, face-aligned normals
+            return [
+                // Top face (+binormal)
+                ProfilePoint(position: SIMD2<Float>(1, 1),  normal: SIMD2<Float>(0, 1)),
+                ProfilePoint(position: SIMD2<Float>(-1, 1), normal: SIMD2<Float>(0, 1)),
+                // Left face (-normal)
+                ProfilePoint(position: SIMD2<Float>(-1, 1), normal: SIMD2<Float>(-1, 0)),
+                ProfilePoint(position: SIMD2<Float>(-1, -1), normal: SIMD2<Float>(-1, 0)),
+                // Bottom face (-binormal)
+                ProfilePoint(position: SIMD2<Float>(-1, -1), normal: SIMD2<Float>(0, -1)),
+                ProfilePoint(position: SIMD2<Float>(1, -1),  normal: SIMD2<Float>(0, -1)),
+                // Right face (+normal)
+                ProfilePoint(position: SIMD2<Float>(1, -1), normal: SIMD2<Float>(1, 0)),
+                ProfilePoint(position: SIMD2<Float>(1, 1),  normal: SIMD2<Float>(1, 0))
+            ]
+        case .loop:
+            // Circular cross-section, smooth normals
+            return (0..<8).map { i in
+                let angle = Float(i) / Float(8) * 2.0 * .pi
+                let c = cos(angle)
+                let s = sin(angle)
+                return ProfilePoint(position: SIMD2<Float>(c, s), normal: SIMD2<Float>(c, s))
+            }
         }
     }
 
+    // MARK: - Cross-section size
+
+    /// Half-extent along the in-plane (normal) axis, in Angstroms.
     private static func sectionWidth(for type: SecondaryStructureType) -> Float {
         switch type {
-        case .helix: return 1.5
-        case .sheet: return 2.0
-        case .loop: return 0.3
+        case .helix: return 0.9
+        case .sheet: return 1.1
+        case .loop: return 0.22
         }
     }
 
+    /// Half-extent along the out-of-plane (binormal) axis, in Angstroms.
     private static func sectionHeight(for type: SecondaryStructureType) -> Float {
         switch type {
-        case .helix: return 0.4
-        case .sheet: return 0.3
-        case .loop: return 0.3
+        case .helix: return 0.28
+        case .sheet: return 0.18
+        case .loop: return 0.22
         }
     }
 }

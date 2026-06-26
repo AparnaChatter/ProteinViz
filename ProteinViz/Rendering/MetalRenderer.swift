@@ -51,7 +51,7 @@ final class MetalRenderer: NSObject, ObservableObject {
     private var cameraFitDistance: Float = 10.0
     private var proteinCenter: SIMD3<Float> = .zero
     private var proteinScale: Float = 1.0
-    private let radiusVisualBoost: Float = 4.0
+    private let radiusVisualBoost: Float = 1.0
     private var ribbonVertexBuffer: MTLBuffer?
     private var ribbonIndexBuffer: MTLBuffer?
     private var ribbonIndexCount: Int = 0
