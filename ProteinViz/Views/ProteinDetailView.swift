@@ -13,6 +13,7 @@ struct ProteinDetailView: View {
     @ObservedObject var gestureHandler: GestureHandler
     @ObservedObject var annotationStore: AnnotationStore
     let curatedEntry: CuratedProteinEntry?
+    @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var representationMode: RepresentationMode = .spheres
     @State private var colorMode: ColorMode = .cpk
     @State private var isLegendExpanded = true
@@ -22,6 +23,7 @@ struct ProteinDetailView: View {
     @State private var isCapturingScreenshot = false
     @State private var screenshotErrorMessage: String?
     @State private var isShowingCuratedInfo = false
+    @State private var showLigands: Bool = true
 
     var body: some View {
         ZStack {
@@ -56,6 +58,21 @@ struct ProteinDetailView: View {
             }
         }
         .toolbar {
+            ToolbarItemGroup(placement: .topBarLeading) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        columnVisibility = (columnVisibility == .detailOnly) ? .all : .detailOnly
+                    }
+                } label: {
+                    Label(
+                        columnVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar",
+                        systemImage: columnVisibility == .detailOnly
+                            ? "sidebar.leading"
+                            : "rectangle.righthalf.inset.filled.arrow.right"
+                    )
+                }
+            }
+
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if curatedEntry != nil {
                     Button {
@@ -64,6 +81,16 @@ struct ProteinDetailView: View {
                         Label("About this protein", systemImage: "info.circle")
                     }
                 }
+
+                Button {
+                    showLigands.toggle()
+                } label: {
+                    Label(
+                        showLigands ? "Hide Ligands" : "Show Ligands",
+                        systemImage: showLigands ? "atom" : "atom"
+                    )
+                }
+                .tint(showLigands ? .orange : nil)
 
                 Button {
                     gestureHandler.resetCamera()
@@ -111,12 +138,16 @@ struct ProteinDetailView: View {
             renderer.protein = protein
             renderer.representationMode = representationMode
             renderer.colorMode = colorMode
+            renderer.showLigands = showLigands
         }
         .onChange(of: representationMode) { _, newValue in
             renderer.representationMode = newValue
         }
         .onChange(of: colorMode) { _, newValue in
             renderer.colorMode = newValue
+        }
+        .onChange(of: showLigands) { _, newValue in
+            renderer.showLigands = newValue
         }
         .onChange(of: renderer.geometryError) { _, newValue in
             geometryAlertMessage = newValue
@@ -126,7 +157,7 @@ struct ProteinDetailView: View {
         }
         .sheet(isPresented: $isShowingCuratedInfo) {
             if let curatedEntry {
-                CuratedProteinInfoSheet(entry: curatedEntry)
+                CuratedProteinInfoSheet(entry: curatedEntry, protein: protein)
             }
         }
         .alert("Ribbon Geometry Error", isPresented: Binding(

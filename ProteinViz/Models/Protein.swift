@@ -41,6 +41,20 @@ struct Protein: Hashable {
         atoms.count
     }
 
+    /// Counts of distinct ligand (HETATM) residues in the structure, e.g. `["HEM": 4]`
+    /// for hemoglobin. Each unique (chainID, residueSeq, residueName) triplet counts once.
+    var ligandResidueCounts: [String: Int] {
+        var seen = Set<String>()
+        var counts: [String: Int] = [:]
+        for atom in atoms where atom.isLigand {
+            let key = "\(atom.chainID)|\(atom.residueSeq)|\(atom.residueName)"
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            counts[atom.residueName, default: 0] += 1
+        }
+        return counts
+    }
+
     static func empty(name: String = "Untitled Protein") -> Protein {
         Protein(
             name: name,

@@ -41,9 +41,14 @@ struct PDBParser {
             var secondaryStructure: [SecondaryStructureElement] = []
 
             for line in lines {
-                if line.hasPrefix("ATOM") || line.hasPrefix("HETATM") {
-                    guard let atom = Self.parseAtom(from: line) else { continue }
+                if line.hasPrefix("ATOM") {
+                    guard let atom = Self.parseAtom(from: line, isLigand: false) else { continue }
                     if atom.element.uppercased() == "H" { continue }
+                    atoms.append(atom)
+                } else if line.hasPrefix("HETATM") {
+                    guard let atom = Self.parseAtom(from: line, isLigand: true) else { continue }
+                    if atom.element.uppercased() == "H" { continue }
+                    if Self.isWaterResidue(atom.residueName) { continue }
                     atoms.append(atom)
                 } else if line.hasPrefix("HELIX") {
                     if let element = Self.parseHelix(from: line) {
@@ -98,9 +103,17 @@ struct PDBParser {
         return SecondaryStructureElement(type: .sheet, chainID: chain, startResidueSeq: startSeq, endResidueSeq: endSeq)
     }
 
+    // MARK: - Water filtering
+
+    nonisolated private static let waterResidueNames: Set<String> = ["HOH", "WAT", "H2O", "DOD", "TIP", "TIP3", "TP3"]
+
+    nonisolated private static func isWaterResidue(_ residueName: String) -> Bool {
+        waterResidueNames.contains(residueName.trimmingCharacters(in: .whitespacesAndNewlines).uppercased())
+    }
+
     // MARK: - Atom Parsing
 
-    nonisolated private static func parseAtom(from line: String) -> Atom? {
+    nonisolated private static func parseAtom(from line: String, isLigand: Bool) -> Atom? {
         guard
             let serial = intField(in: line, start: 7, end: 11),
             let name = stringField(in: line, start: 13, end: 16, preserveSpaces: false),
@@ -130,7 +143,8 @@ struct PDBParser {
             chainID: chainChar,
             residueSeq: residueSeq,
             position: SIMD3<Float>(x, y, z),
-            element: element
+            element: element,
+            isLigand: isLigand
         )
     }
 

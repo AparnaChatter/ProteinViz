@@ -40,6 +40,12 @@ final class MetalRenderer: NSObject, ObservableObject {
 
     @Published var geometryError: String?
 
+    @Published var showLigands: Bool = true {
+        didSet {
+            rebuildGeometry()
+        }
+    }
+
     weak var gestureHandler: GestureHandler?
 
     var metalDevice: MTLDevice { device }
@@ -57,6 +63,11 @@ final class MetalRenderer: NSObject, ObservableObject {
     private var ribbonVertexBuffer: MTLBuffer?
     private var ribbonIndexBuffer: MTLBuffer?
     private var ribbonIndexCount: Int = 0
+    /// Ligand-only sphere buffer used as an overlay pass when the user is in ribbon mode.
+    private var ligandInstanceBuffer: MTLBuffer?
+    private var ligandInstanceCount: Int = 0
+    /// Extra size multiplier so ligand atoms stand out against ribbon/spheres.
+    private let ligandRadiusBoost: Float = 1.35
     private var geometryTask: Task<Void, Never>?
     private var pendingScreenshot: (@Sendable (UIImage?) -> Void)?
     private var lastDrawableSize: CGSize = .zero
@@ -134,6 +145,8 @@ final class MetalRenderer: NSObject, ObservableObject {
             ribbonVertexBuffer = nil
             ribbonIndexBuffer = nil
             ribbonIndexCount = 0
+            ligandInstanceBuffer = nil
+            ligandInstanceCount = 0
             return
         }
 
@@ -152,12 +165,14 @@ final class MetalRenderer: NSObject, ObservableObject {
             instanceBuffer = nil
             instanceCount = 0
         }
+        updateLigandBuffer(for: protein)
     }
 
     private func updateSphereBuffers(for protein: Protein) {
-        instanceCount = protein.atoms.count
+        let atomsToRender = showLigands ? protein.atoms : protein.atoms.filter { !$0.isLigand }
+        instanceCount = atomsToRender.count
 
-        let instanceData = protein.atoms.map { atom -> InstanceData in
+        let instanceData = atomsToRender.map { atom -> InstanceData in
             let centeredPosition = (atom.position - proteinCenter) * proteinScale
             let color = sphereColor(for: atom, in: protein)
             return InstanceData(position: centeredPosition, color: color, radius: atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost)
@@ -165,6 +180,36 @@ final class MetalRenderer: NSObject, ObservableObject {
 
         let bufferLength = max(1, instanceData.count) * MemoryLayout<InstanceData>.stride
         instanceBuffer = instanceData.withUnsafeBytes { rawBuffer in
+            guard let baseAddress = rawBuffer.baseAddress else {
+                return device.makeBuffer(length: bufferLength, options: .storageModeShared)
+            }
+            return device.makeBuffer(bytes: baseAddress, length: bufferLength, options: .storageModeShared)
+        }
+    }
+
+    /// Builds a sphere instance buffer containing only ligand (HETATM) atoms with a small
+    /// radius boost so they read clearly when overlaid on the ribbon representation.
+    private func updateLigandBuffer(for protein: Protein) {
+        let ligandAtoms = protein.atoms.filter { $0.isLigand }
+        ligandInstanceCount = ligandAtoms.count
+
+        guard !ligandAtoms.isEmpty else {
+            ligandInstanceBuffer = nil
+            return
+        }
+
+        let instanceData = ligandAtoms.map { atom -> InstanceData in
+            let centered = (atom.position - proteinCenter) * proteinScale
+            // CPK color always for ligand overlay so heme iron / metals are immediately readable.
+            return InstanceData(
+                position: centered,
+                color: atom.cpkColor,
+                radius: atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost * ligandRadiusBoost
+            )
+        }
+
+        let bufferLength = instanceData.count * MemoryLayout<InstanceData>.stride
+        ligandInstanceBuffer = instanceData.withUnsafeBytes { rawBuffer in
             guard let baseAddress = rawBuffer.baseAddress else {
                 return device.makeBuffer(length: bufferLength, options: .storageModeShared)
             }
@@ -443,12 +488,21 @@ extension MetalRenderer: MTKViewDelegate {
             }
         case .ribbon:
             renderEncoder.setRenderPipelineState(ribbonPipelineState)
+            let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
+            var uniformsCopy = uniforms
             if let ribbonVertexBuffer, let ribbonIndexBuffer, ribbonIndexCount > 0 {
-                let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
-                var uniformsCopy = uniforms
                 renderEncoder.setVertexBuffer(ribbonVertexBuffer, offset: 0, index: 0)
                 renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
                 renderEncoder.drawIndexedPrimitives(type: .triangle, indexCount: ribbonIndexCount, indexType: .uint32, indexBuffer: ribbonIndexBuffer, indexBufferOffset: 0)
+            }
+            // Ligand overlay pass: render HETATM atoms (heme, ATP, drug molecules, ions, etc.)
+            // as CPK-colored spheres on top of the ribbon so they remain visible.
+            if showLigands, let ligandInstanceBuffer, ligandInstanceCount > 0 {
+                renderEncoder.setRenderPipelineState(spherePipelineState)
+                renderEncoder.setVertexBuffer(ligandInstanceBuffer, offset: 0, index: 0)
+                renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                renderEncoder.setFragmentBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+                renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: ligandInstanceCount)
             }
         }
 

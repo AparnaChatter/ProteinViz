@@ -14,9 +14,10 @@ struct ContentView: View {
     @StateObject private var renderer = MetalRenderer()
     @StateObject private var annotationStore = AnnotationStore()
     @State private var selectedCategory: LibraryCategory? = .curated
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             CategorySidebar(selection: $selectedCategory)
         } content: {
             ProteinListView(
@@ -30,7 +31,8 @@ struct ContentView: View {
                     renderer: renderer,
                     gestureHandler: gestureHandler,
                     annotationStore: annotationStore,
-                    curatedEntry: libraryViewModel.selectedEntry?.curatedEntry
+                    curatedEntry: libraryViewModel.selectedEntry?.curatedEntry,
+                    columnVisibility: $columnVisibility
                 )
             } else {
                 placeholderView

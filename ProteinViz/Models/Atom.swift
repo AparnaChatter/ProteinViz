@@ -17,6 +17,10 @@ struct Atom: Identifiable, Hashable {
     let residueSeq: Int
     let position: SIMD3<Float>
     let element: String
+    /// True when this atom came from a `HETATM` record (heterogen / ligand / cofactor).
+    /// Crystallographic waters are filtered out before construction, so this flag really
+    /// means "interesting non-protein residue" — heme, ATP, metal ions, drug molecules, etc.
+    let isLigand: Bool
 
     var id: Int { serial }
 
