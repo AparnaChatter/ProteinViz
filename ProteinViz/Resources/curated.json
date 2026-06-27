@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "proteins": [
+    {
+      "pdb_id": "4INS",
+      "display_name": "Insulin",
+      "category": "Hormone",
+      "summary": "Pancreatic peptide hormone that lowers blood glucose.",
+      "function": "Insulin is secreted by pancreatic β-cells when blood glucose rises after a meal. It binds the insulin receptor on muscle, liver, and adipose cells, triggering GLUT4-mediated glucose uptake and stimulating glycogen and lipid storage. The mature hormone is a heterodimer of an A chain (21 residues) and a B chain (30 residues) joined by two interchain disulfide bonds, with a third intrachain disulfide stabilizing the A chain.",
+      "key_domains": ["A chain", "B chain", "Inter-chain disulfide bonds"],
+      "file_name": "insulin.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch the color picker to Chain to distinguish the A chain from the B chain, then enable annotation mode and tap a cysteine to label one of the disulfide bridges."
+    },
+    {
+      "pdb_id": "2DHB",
+      "display_name": "Hemoglobin (deoxy)",
+      "category": "Oxygen transport",
+      "summary": "Erythrocyte oxygen carrier with cooperative O2 binding.",
+      "function": "Hemoglobin transports oxygen from the lungs to peripheral tissues. Each tetramer (two α and two β subunits) carries four heme groups, each binding one O2. Cooperative binding produces the sigmoidal saturation curve — binding at one heme increases the affinity of the others, shifting the structure between the low-affinity T (tense, deoxy) and high-affinity R (relaxed, oxy) states.",
+      "key_domains": ["α subunit (×2)", "β subunit (×2)", "Heme group"],
+      "file_name": "hemoglobin.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Color by Chain to see the α₂β₂ tetramer arrangement, then look for the four orange heme iron atoms tucked inside each subunit."
+    },
+    {
+      "pdb_id": "2LYZ",
+      "display_name": "Lysozyme",
+      "category": "Enzyme",
+      "summary": "Antibacterial enzyme found in tears, saliva, and egg white.",
+      "function": "Lysozyme hydrolyzes the β(1→4) glycosidic bond between N-acetylmuramic acid and N-acetylglucosamine in bacterial peptidoglycan, lysing Gram-positive cell walls. It was the first enzyme to have its three-dimensional structure determined by X-ray crystallography (Phillips, 1965) and remains the canonical teaching example of an enzyme active site.",
+      "key_domains": ["Active-site cleft", "α/β fold", "Catalytic Glu35 / Asp52"],
+      "file_name": "lysozyme.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch to Ribbon mode and rotate to find the deep cleft between the two domains — that is the active site where the substrate sugar chain threads in."
+    },
+    {
+      "pdb_id": "1UBQ",
+      "display_name": "Ubiquitin",
+      "category": "Signaling",
+      "summary": "76-residue tag that marks substrates for proteasomal destruction.",
+      "function": "Ubiquitin is conjugated to lysine side chains on target proteins through the E1/E2/E3 enzyme cascade. Polyubiquitin chains linked through Lys48 mark the substrate for proteasomal degradation; chains linked through Lys63 mediate signaling and DNA repair. Ubiquitin's compact β-grasp fold is exceptionally stable and is the canonical model system for protein folding studies.",
+      "key_domains": ["β-grasp fold", "C-terminal Gly-Gly motif", "Lys48 / Lys63 linkage sites"],
+      "file_name": "ubiquitin.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch to Ribbon mode and color by Structure — you will see the diagonal α-helix wrapped against the curved β-sheet that defines the β-grasp fold."
+    },
+    {
+      "pdb_id": "1EMA",
+      "display_name": "Green Fluorescent Protein",
+      "category": "Biotechnology",
+      "summary": "Auto-fluorescent β-barrel from the jellyfish Aequorea victoria.",
+      "function": "GFP absorbs blue light and re-emits green via an internally formed chromophore (Ser-Tyr-Gly that autocatalytically cyclizes after folding). The eleven-strand β-barrel rigidly surrounds and protects the chromophore — no external cofactors are required. GFP and its color variants are the foundation of live-cell imaging and earned the 2008 Nobel Prize in Chemistry.",
+      "key_domains": ["β-barrel (11 strands)", "Internal chromophore (Ser65-Tyr66-Gly67)"],
+      "file_name": "gfp.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch to Ribbon mode and rotate down the barrel axis to see the eleven β-strands wrap around the chromophore hidden inside."
+    },
+    {
+      "pdb_id": "7FAB",
+      "display_name": "Antibody Fab Fragment",
+      "category": "Immunology",
+      "summary": "Antigen-binding arm of an immunoglobulin G.",
+      "function": "The Fab fragment is one of the two antigen-binding arms of an antibody: a light chain (VL + CL) paired with the N-terminal half of a heavy chain (VH + CH1). Antigen specificity comes from six complementarity-determining region (CDR) loops at the tip of VH and VL. The same architecture underlies modern therapeutic antibodies including trastuzumab, pembrolizumab, and broadly neutralizing anti-HIV antibodies.",
+      "key_domains": ["Variable region (VL + VH)", "Constant region (CL + CH1)", "CDR loops"],
+      "file_name": "antibody_fab.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Color by Chain to separate the heavy and light chains, then look for the six CDR loops protruding at the variable-region tip — those are the antigen-binding fingertips."
+    },
+    {
+      "pdb_id": "1RTD",
+      "display_name": "HIV-1 Reverse Transcriptase",
+      "category": "Antiviral target",
+      "summary": "RNA-dependent DNA polymerase essential for HIV replication.",
+      "function": "Reverse transcriptase (RT) copies HIV's single-stranded RNA genome into double-stranded DNA for integration into the host. It is a heterodimer of p66 (catalytic — polymerase and RNase H domains) and p51 (structural). RT is the target of the NRTI class (e.g. AZT, tenofovir, which mimic dNTPs) and the NNRTI class (e.g. efavirenz, which bind an allosteric pocket) used in modern combination antiretroviral therapy.",
+      "key_domains": ["p66 polymerase domain", "p66 RNase H domain", "p51 structural subunit", "NNRTI allosteric pocket"],
+      "file_name": "hiv_rt.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Color by Chain to see the asymmetric p66/p51 heterodimer — same polypeptide sequence, but only p66 folds into the catalytic 'right hand' shape with palm, fingers, and thumb."
+    },
+    {
+      "pdb_id": "1BMF",
+      "display_name": "ATP Synthase F1",
+      "category": "Bioenergetics",
+      "summary": "Rotary motor that synthesizes ATP from ADP and inorganic phosphate.",
+      "function": "F1 is the catalytic head of mitochondrial (and bacterial) ATP synthase. Proton flow through the membrane-embedded F0 portion drives rotation of the central γ subunit; this rotation cycles each of the three catalytic β subunits through binding, synthesis, and release states — Boyer's binding-change mechanism. Each full rotation produces three ATP molecules.",
+      "key_domains": ["α subunit (×3, structural)", "β subunit (×3, catalytic)", "γ central stalk"],
+      "file_name": "atp_synthase.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Color by Chain and rotate to see the alternating α₃β₃ hexamer arranged around the central γ stalk — the asymmetry of γ is what forces each β subunit through its catalytic cycle."
+    },
+    {
+      "pdb_id": "2MYS",
+      "display_name": "Myosin Motor Domain (S1)",
+      "category": "Motility",
+      "summary": "Actin-binding head of the muscle motor protein myosin II.",
+      "function": "The myosin S1 fragment contains the ATP-binding site and the actin-binding interface — the catalytic core that drives muscle contraction. ATP hydrolysis is mechanically coupled to a large conformational change in the converter domain and lever arm, producing the power stroke that walks along actin filaments. The same architecture underlies non-muscle myosin II's role in cytokinesis and cell migration.",
+      "key_domains": ["Motor domain", "Converter domain", "Lever arm (essential + regulatory light chains)"],
+      "file_name": "myosin_s1.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch to Ribbon mode — the long α-helix sticking out is the lever arm that amplifies tiny ATP-driven motions of the motor head into a ~10 nm power stroke."
+    },
+    {
+      "pdb_id": "1J6Z",
+      "display_name": "G-Actin Monomer",
+      "category": "Cytoskeleton",
+      "summary": "Monomeric building block of microfilaments.",
+      "function": "Globular (G-)actin polymerizes head-to-tail into double-helical filaments (F-actin) that form the cytoskeletal microfilament network and the thin filaments of muscle sarcomeres. Polymerization is regulated by nucleotide state (ATP-actin assembles, ADP-actin disassembles) and by accessory proteins including profilin, cofilin, the Arp2/3 complex, and formins.",
+      "key_domains": ["Nucleotide-binding cleft", "Subdomains 1-4", "DNase I binding loop"],
+      "file_name": "g_actin.pdb",
+      "initial_rotation_degrees": [0, 0, 0],
+      "initial_zoom": 1.0,
+      "try_this": "Switch to Ribbon mode and find the deep cleft splitting the molecule into two lobes — that is where ATP/ADP binds and regulates whether the monomer assembles into filaments."
+    }
+  ]
+}

@@ -12,6 +12,7 @@ struct ProteinDetailView: View {
     @ObservedObject var renderer: MetalRenderer
     @ObservedObject var gestureHandler: GestureHandler
     @ObservedObject var annotationStore: AnnotationStore
+    let curatedEntry: CuratedProteinEntry?
     @State private var representationMode: RepresentationMode = .spheres
     @State private var colorMode: ColorMode = .cpk
     @State private var isLegendExpanded = true
@@ -20,6 +21,7 @@ struct ProteinDetailView: View {
     @State private var screenshotItem: ScreenshotItem?
     @State private var isCapturingScreenshot = false
     @State private var screenshotErrorMessage: String?
+    @State private var isShowingCuratedInfo = false
 
     var body: some View {
         ZStack {
@@ -55,6 +57,14 @@ struct ProteinDetailView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                if curatedEntry != nil {
+                    Button {
+                        isShowingCuratedInfo = true
+                    } label: {
+                        Label("About this protein", systemImage: "info.circle")
+                    }
+                }
+
                 Button {
                     gestureHandler.resetCamera()
                 } label: {
@@ -94,6 +104,9 @@ struct ProteinDetailView: View {
                 .pickerStyle(.segmented)
             }
         }
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Material.bar, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .onAppear {
             renderer.protein = protein
             renderer.representationMode = representationMode
@@ -110,6 +123,11 @@ struct ProteinDetailView: View {
         }
         .sheet(item: $screenshotItem) { item in
             ScreenshotAnnotationView(baseImage: item.image)
+        }
+        .sheet(isPresented: $isShowingCuratedInfo) {
+            if let curatedEntry {
+                CuratedProteinInfoSheet(entry: curatedEntry)
+            }
         }
         .alert("Ribbon Geometry Error", isPresented: Binding(
             get: { geometryAlertMessage != nil },
