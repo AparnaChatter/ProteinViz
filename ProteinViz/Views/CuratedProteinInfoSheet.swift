@@ -124,48 +124,13 @@ struct CuratedProteinInfoSheet: View {
     }
 
     private func ligandDisplayLabel(code: String, count: Int) -> String {
-        let friendly = Self.commonLigandNames[code.uppercased()]
+        let friendly = LigandLibrary.commonName(for: code)
         let countSuffix = count > 1 ? " × \(count)" : ""
         if let friendly {
             return "\(code) — \(friendly)\(countSuffix)"
         }
         return "\(code)\(countSuffix)"
     }
-
-    /// Friendly names for the handful of cofactors / ligands that show up across the
-    /// curated set. Adding more is purely additive.
-    private static let commonLigandNames: [String: String] = [
-        "HEM": "Heme group (iron porphyrin)",
-        "HEC": "Heme C",
-        "HEA": "Heme A",
-        "ATP": "Adenosine triphosphate",
-        "ADP": "Adenosine diphosphate",
-        "AMP": "Adenosine monophosphate",
-        "GTP": "Guanosine triphosphate",
-        "GDP": "Guanosine diphosphate",
-        "NAD": "NAD+",
-        "NAP": "NADP+",
-        "FAD": "Flavin adenine dinucleotide",
-        "FMN": "Flavin mononucleotide",
-        "MG":  "Magnesium ion",
-        "CA":  "Calcium ion",
-        "ZN":  "Zinc ion",
-        "FE":  "Iron ion",
-        "MN":  "Manganese ion",
-        "NA":  "Sodium ion",
-        "K":   "Potassium ion",
-        "CL":  "Chloride ion",
-        "SO4": "Sulfate",
-        "PO4": "Phosphate",
-        "GOL": "Glycerol (cryoprotectant)",
-        "EDO": "Ethylene glycol (cryoprotectant)",
-        "PEG": "Polyethylene glycol (crystallization additive)",
-        "MES": "MES buffer",
-        "TRS": "TRIS buffer",
-        "AZT": "Zidovudine (anti-HIV)",
-        "EFZ": "Efavirenz (NNRTI)",
-        "NVP": "Nevirapine (NNRTI)"
-    ]
 
     private func tryThisSection(text: String) -> some View {
         HStack(alignment: .top, spacing: 12) {

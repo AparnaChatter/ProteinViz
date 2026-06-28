@@ -23,33 +23,47 @@ struct ProteinDetailView: View {
     @State private var screenshotErrorMessage: String?
     @State private var isShowingCuratedInfo = false
     @State private var showLigands: Bool = true
+    @State private var hoverInfo: HoverInfo?
+    @State private var selectedResidueKey: String?
+    @State private var showSequenceStrip: Bool = false
 
     var body: some View {
-        ZStack {
-            MetalView(
-                protein: protein,
-                renderer: renderer,
-                gestureHandler: gestureHandler,
-                onTap: handleTap
-            )
-            .clipped()
-            .ignoresSafeArea()
-
-            AnnotationOverlay(
-                protein: protein,
-                annotationStore: annotationStore,
-                gestureHandler: gestureHandler,
-                renderer: renderer
-            )
-            .allowsHitTesting(true)
-
-            if showLigands && !protein.ligandInstances.isEmpty {
-                LigandLabelsOverlay(
+        GeometryReader { geo in
+            ZStack {
+                MetalView(
                     protein: protein,
+                    renderer: renderer,
+                    gestureHandler: gestureHandler,
+                    onTap: handleTap
+                )
+                .clipped()
+                .ignoresSafeArea()
+
+                AnnotationOverlay(
+                    protein: protein,
+                    annotationStore: annotationStore,
                     gestureHandler: gestureHandler,
                     renderer: renderer
                 )
-                .allowsHitTesting(false)
+                .allowsHitTesting(true)
+
+                if showLigands && !protein.ligandInstances.isEmpty {
+                    LigandLabelsOverlay(
+                        protein: protein,
+                        gestureHandler: gestureHandler,
+                        renderer: renderer
+                    )
+                    .allowsHitTesting(false)
+                }
+
+                if let info = hoverInfo {
+                    HoverTooltip(atom: info.atom)
+                        .position(tooltipPosition(for: info.screenPoint, in: geo.size))
+                        .allowsHitTesting(false)
+                }
+            }
+            .onContinuousHover(coordinateSpace: .local) { phase in
+                handleHover(phase: phase, viewSize: geo.size)
             }
         }
         .navigationTitle(protein.name)
@@ -57,6 +71,14 @@ struct ProteinDetailView: View {
             if colorMode != .cpk {
                 legendOverlay
                     .padding()
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if showSequenceStrip {
+                SequenceStripView(protein: protein, selectedResidueKey: $selectedResidueKey)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .overlay(alignment: .topLeading) {
@@ -84,6 +106,18 @@ struct ProteinDetailView: View {
                     )
                 }
                 .tint(showLigands ? .orange : nil)
+
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        showSequenceStrip.toggle()
+                    }
+                } label: {
+                    Label(
+                        showSequenceStrip ? "Hide Sequence" : "Show Sequence",
+                        systemImage: "textformat.abc"
+                    )
+                }
+                .tint(showSequenceStrip ? .yellow : nil)
 
                 Button {
                     gestureHandler.resetCamera()
@@ -132,6 +166,7 @@ struct ProteinDetailView: View {
             renderer.representationMode = representationMode
             renderer.colorMode = colorMode
             renderer.showLigands = showLigands
+            renderer.selectedResidueKey = selectedResidueKey
         }
         .onChange(of: representationMode) { _, newValue in
             renderer.representationMode = newValue
@@ -141,6 +176,14 @@ struct ProteinDetailView: View {
         }
         .onChange(of: showLigands) { _, newValue in
             renderer.showLigands = newValue
+        }
+        .onChange(of: selectedResidueKey) { _, newValue in
+            renderer.selectedResidueKey = newValue
+        }
+        .onChange(of: protein.name) { _, _ in
+            // Clear the residue selection when the user switches protein so the highlight
+            // doesn't bleed across structures.
+            selectedResidueKey = nil
         }
         .onChange(of: renderer.geometryError) { _, newValue in
             geometryAlertMessage = newValue
@@ -169,6 +212,48 @@ struct ProteinDetailView: View {
         } message: {
             Text(screenshotErrorMessage ?? "")
         }
+    }
+
+    // MARK: - Pencil hover
+
+    /// Snapshot of the most recent Apple Pencil hover hit. Drives the floating tooltip.
+    struct HoverInfo: Equatable {
+        let screenPoint: CGPoint
+        let atom: Atom
+    }
+
+    private func handleHover(phase: HoverPhase, viewSize: CGSize) {
+        switch phase {
+        case .active(let location):
+            if let picked = renderer.pickAtom(at: location, viewSize: viewSize) {
+                let info = HoverInfo(screenPoint: location, atom: picked.atom)
+                if hoverInfo != info { hoverInfo = info }
+            } else if hoverInfo != nil {
+                hoverInfo = nil
+            }
+        case .ended:
+            hoverInfo = nil
+        }
+    }
+
+    /// Offsets the tooltip from the pencil tip and keeps it inside the visible area.
+    private func tooltipPosition(for cursor: CGPoint, in viewSize: CGSize) -> CGPoint {
+        let tooltipWidth: CGFloat = 200
+        let tooltipHeight: CGFloat = 50
+        let offset: CGFloat = 22
+
+        var x = cursor.x + offset + tooltipWidth / 2
+        var y = cursor.y - offset - tooltipHeight / 2
+
+        // Flip the tooltip to the left of the tip if it would clip the right edge.
+        if x + tooltipWidth / 2 > viewSize.width - 8 {
+            x = cursor.x - offset - tooltipWidth / 2
+        }
+        // Drop the tooltip below the tip if it would clip the top edge.
+        if y - tooltipHeight / 2 < 8 {
+            y = cursor.y + offset + tooltipHeight / 2
+        }
+        return CGPoint(x: x, y: y)
     }
 
     // MARK: - Annotation handling
@@ -272,5 +357,51 @@ struct ProteinDetailView: View {
             Circle().fill(color).frame(width: 10, height: 10)
             Text(title).font(.caption)
         }
+    }
+}
+
+// MARK: - Hover Tooltip
+
+/// Floating, non-interactive label that follows the Apple Pencil tip during hover.
+/// Shows residue identity / atom name for protein atoms, and a friendly ligand name
+/// (via LigandLibrary) for HETATM atoms.
+private struct HoverTooltip: View {
+    let atom: Atom
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(primaryLabel)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+            Text(secondaryLabel)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(Color.accentColor.opacity(0.55), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 4, x: 0, y: 2)
+        .fixedSize()
+    }
+
+    private var primaryLabel: String {
+        let residue = atom.residueName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if atom.isLigand {
+            if let friendly = LigandLibrary.commonName(for: residue) {
+                return "\(residue) — \(friendly)"
+            }
+            return residue.isEmpty ? "Ligand" : residue
+        }
+        return residue.isEmpty ? "Residue" : "\(residue) \(atom.residueSeq)"
+    }
+
+    private var secondaryLabel: String {
+        let atomName = atom.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let chain = "Chain \(String(atom.chainID))"
+        return atomName.isEmpty ? chain : "\(chain) · \(atomName)"
     }
 }

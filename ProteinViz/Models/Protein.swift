@@ -25,6 +25,26 @@ struct ProteinBoundingBox: Hashable, Sendable {
     }
 }
 
+// MARK: - Residue
+
+/// One residue (amino acid or non-protein heterogen) grouped from all its atoms. Carries
+/// the centroid + atom indices so the sequence strip can highlight, scroll-to, and frame.
+struct Residue: Identifiable, Hashable {
+    let chainID: Character
+    let residueSeq: Int
+    let residueName: String
+    let isLigand: Bool
+    let centroid: SIMD3<Float>
+    let atomIndices: [Int]
+
+    /// Matches `Atom.residueKey` so renderer and sidebar agree on selection identity.
+    var id: String { "\(String(chainID))|\(residueSeq)" }
+
+    var oneLetterCode: String {
+        AminoAcidCodes.oneLetter(for: residueName)
+    }
+}
+
 // MARK: - Ligand Instance
 
 /// One discrete ligand residue (e.g. a heme group, an ATP molecule, a magnesium ion).
@@ -67,6 +87,46 @@ struct Protein: Hashable {
             counts[atom.residueName, default: 0] += 1
         }
         return counts
+    }
+
+    /// All residues (protein + ligand) keyed by `chainID|residueSeq`. Sorted by chain then
+    /// sequence number so the sequence strip and any future residue list iterate in order.
+    var residues: [Residue] {
+        let grouped = Dictionary(grouping: atoms.indices, by: { idx -> String in
+            let atom = atoms[idx]
+            return atom.residueKey
+        })
+        let built: [Residue] = grouped.compactMap { _, indices in
+            guard let firstIndex = indices.first else { return nil }
+            let firstAtom = atoms[firstIndex]
+            let sum = indices.reduce(SIMD3<Float>.zero) { partial, idx in
+                partial + atoms[idx].position
+            }
+            let centroid = sum / Float(indices.count)
+            return Residue(
+                chainID: firstAtom.chainID,
+                residueSeq: firstAtom.residueSeq,
+                residueName: firstAtom.residueName,
+                isLigand: firstAtom.isLigand,
+                centroid: centroid,
+                atomIndices: indices
+            )
+        }
+        return built.sorted { lhs, rhs in
+            if lhs.chainID != rhs.chainID { return lhs.chainID < rhs.chainID }
+            return lhs.residueSeq < rhs.residueSeq
+        }
+    }
+
+    /// Protein-only residues (HETATM ligands excluded), grouped per chain, sorted by seq.
+    /// This is what the sequence strip iterates over.
+    var residuesByChain: [(chainID: Character, residues: [Residue])] {
+        let proteinResidues = residues.filter { !$0.isLigand }
+        let grouped = Dictionary(grouping: proteinResidues, by: { $0.chainID })
+        return grouped.keys.sorted().map { chainID -> (Character, [Residue]) in
+            let sorted = (grouped[chainID] ?? []).sorted { $0.residueSeq < $1.residueSeq }
+            return (chainID, sorted)
+        }
     }
 
     /// One LigandInstance per discrete ligand residue, with a centroid for label anchoring.

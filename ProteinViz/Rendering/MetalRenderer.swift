@@ -46,6 +46,16 @@ final class MetalRenderer: NSObject, ObservableObject {
         }
     }
 
+    /// Residue currently selected from the sequence strip (or any future selection UI).
+    /// Format matches `Atom.residueKey`: "<chainID>|<residueSeq>".
+    @Published var selectedResidueKey: String? {
+        didSet {
+            if oldValue != selectedResidueKey {
+                rebuildSelectionOverlay()
+            }
+        }
+    }
+
     weak var gestureHandler: GestureHandler?
 
     var metalDevice: MTLDevice { device }
@@ -68,6 +78,11 @@ final class MetalRenderer: NSObject, ObservableObject {
     private var ligandInstanceCount: Int = 0
     /// Extra size multiplier so ligand atoms stand out against ribbon/spheres.
     private let ligandRadiusBoost: Float = 1.35
+    /// Selected-residue overlay buffer (yellow highlight spheres rendered on top of the
+    /// primary representation when a residue is selected from the sequence strip).
+    private var selectedInstanceBuffer: MTLBuffer?
+    private var selectedInstanceCount: Int = 0
+    private let selectedRadiusBoost: Float = 1.55
     private var geometryTask: Task<Void, Never>?
     private var pendingScreenshot: (@Sendable (UIImage?) -> Void)?
     private var lastDrawableSize: CGSize = .zero
@@ -147,6 +162,8 @@ final class MetalRenderer: NSObject, ObservableObject {
             ribbonIndexCount = 0
             ligandInstanceBuffer = nil
             ligandInstanceCount = 0
+            selectedInstanceBuffer = nil
+            selectedInstanceCount = 0
             return
         }
 
@@ -166,6 +183,18 @@ final class MetalRenderer: NSObject, ObservableObject {
             instanceCount = 0
         }
         updateLigandBuffer(for: protein)
+        rebuildSelectionOverlay()
+    }
+
+    /// Rebuilds only the highlight overlay — cheap, called whenever `selectedResidueKey`
+    /// flips so toggling residues from the sequence strip doesn't trigger a full geometry rebuild.
+    private func rebuildSelectionOverlay() {
+        guard let protein else {
+            selectedInstanceBuffer = nil
+            selectedInstanceCount = 0
+            return
+        }
+        updateSelectedBuffer(for: protein)
     }
 
     private func updateSphereBuffers(for protein: Protein) {
@@ -261,6 +290,42 @@ final class MetalRenderer: NSObject, ObservableObject {
                     self.geometryError = message
                 }
             }
+        }
+    }
+
+    /// Builds the selected-residue overlay buffer. All atoms of the residue identified by
+    /// `selectedResidueKey` get a bright tint and a radius boost. Drawn after every other
+    /// pass so the selection sits on top of ribbon, spheres, and ligand labels alike.
+    private func updateSelectedBuffer(for protein: Protein) {
+        guard let key = selectedResidueKey else {
+            selectedInstanceBuffer = nil
+            selectedInstanceCount = 0
+            return
+        }
+        let selectedAtoms = protein.atoms.filter { $0.residueKey == key }
+        selectedInstanceCount = selectedAtoms.count
+
+        guard !selectedAtoms.isEmpty else {
+            selectedInstanceBuffer = nil
+            return
+        }
+
+        let highlightColor = SIMD4<Float>(1.0, 0.86, 0.18, 1.0)
+        let instanceData = selectedAtoms.map { atom -> InstanceData in
+            let centered = (atom.position - proteinCenter) * proteinScale
+            return InstanceData(
+                position: centered,
+                color: highlightColor,
+                radius: atom.vanDerWaalsRadius * proteinScale * radiusVisualBoost * selectedRadiusBoost
+            )
+        }
+
+        let bufferLength = instanceData.count * MemoryLayout<InstanceData>.stride
+        selectedInstanceBuffer = instanceData.withUnsafeBytes { rawBuffer in
+            guard let base = rawBuffer.baseAddress else {
+                return device.makeBuffer(length: bufferLength, options: .storageModeShared)
+            }
+            return device.makeBuffer(bytes: base, length: bufferLength, options: .storageModeShared)
         }
     }
 
@@ -512,6 +577,19 @@ extension MetalRenderer: MTKViewDelegate {
                 renderEncoder.setFragmentBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
                 renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: ligandInstanceCount)
             }
+        }
+
+        // Selection highlight pass: bright yellow boosted spheres for whichever residue
+        // the sequence strip has selected. Renders on top of every other pass so it's
+        // always visible, regardless of representation mode.
+        if let selectedInstanceBuffer, selectedInstanceCount > 0 {
+            let uniforms = makeFrameUniforms(drawableSize: view.drawableSize)
+            var uniformsCopy = uniforms
+            renderEncoder.setRenderPipelineState(spherePipelineState)
+            renderEncoder.setVertexBuffer(selectedInstanceBuffer, offset: 0, index: 0)
+            renderEncoder.setVertexBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+            renderEncoder.setFragmentBytes(&uniformsCopy, length: MemoryLayout<FrameUniforms>.stride, index: 1)
+            renderEncoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 6, instanceCount: selectedInstanceCount)
         }
 
         renderEncoder.endEncoding()

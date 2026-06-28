@@ -24,6 +24,10 @@ struct Atom: Identifiable, Hashable {
 
     var id: Int { serial }
 
+    /// Stable key for the residue this atom belongs to (chain + residueSeq). Used for the
+    /// sequence strip's selection state and the renderer's highlight overlay.
+    var residueKey: String { "\(String(chainID))|\(residueSeq)" }
+
     // MARK: - Color + Radius
 
     private var normalizedElement: String {

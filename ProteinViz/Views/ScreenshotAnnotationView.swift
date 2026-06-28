@@ -47,14 +47,22 @@ struct ScreenshotAnnotationView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
+                // One group keeps Clear / Share / Save in a single, predictable trailing row
+                // instead of competing for the same toolbar slot and collapsing into a menu.
+                ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         canvasView.drawing = PKDrawing()
                     } label: {
                         Label("Clear", systemImage: "trash")
                     }
-                }
-                ToolbarItem(placement: .confirmationAction) {
+
+                    ShareLink(
+                        item: shareImage,
+                        preview: SharePreview("ProteinViz Capture", image: shareImage)
+                    ) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+
                     Button {
                         saveToPhotos()
                     } label: {
@@ -74,6 +82,15 @@ struct ScreenshotAnnotationView: View {
                 Text(saveErrorMessage ?? "")
             }
         }
+    }
+
+    // MARK: - Sharing
+
+    /// SwiftUI Image conforms to `Transferable`, so wrapping the annotated composite
+    /// (or the original capture when the canvas is blank) gives ShareLink everything
+    /// it needs for AirDrop, Mail, Messages, etc.
+    private var shareImage: Image {
+        Image(uiImage: composite() ?? baseImage)
     }
 
     // MARK: - Composition
