@@ -13,17 +13,10 @@ struct ContentView: View {
     @StateObject private var gestureHandler = GestureHandler()
     @StateObject private var renderer = MetalRenderer()
     @StateObject private var annotationStore = AnnotationStore()
-    @State private var selectedCategory: LibraryCategory? = .curated
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            CategorySidebar(selection: $selectedCategory)
-        } content: {
-            ProteinListView(
-                category: selectedCategory ?? .curated,
-                viewModel: libraryViewModel
-            )
+        NavigationSplitView {
+            LibrarySidebar(viewModel: libraryViewModel)
         } detail: {
             if let protein = libraryViewModel.selectedProtein {
                 ProteinDetailView(
@@ -31,8 +24,7 @@ struct ContentView: View {
                     renderer: renderer,
                     gestureHandler: gestureHandler,
                     annotationStore: annotationStore,
-                    curatedEntry: libraryViewModel.selectedEntry?.curatedEntry,
-                    columnVisibility: $columnVisibility
+                    curatedEntry: libraryViewModel.selectedEntry?.curatedEntry
                 )
             } else {
                 placeholderView
@@ -42,26 +34,10 @@ struct ContentView: View {
             renderer.gestureHandler = gestureHandler
             renderer.protein = libraryViewModel.selectedProtein
             applyCameraHint(for: libraryViewModel.selectedEntry)
-            // Default the sidebar selection to whichever category currently owns the selected protein
-            if let category = libraryViewModel.categoryOfSelection {
-                selectedCategory = category
-            }
         }
         .onChange(of: libraryViewModel.selectedProteinID) { _, _ in
             renderer.protein = libraryViewModel.selectedProtein
             applyCameraHint(for: libraryViewModel.selectedEntry)
-        }
-        .onChange(of: selectedCategory) { _, newValue in
-            // When the user switches category, if the current selection is in the other category
-            // (or nil), re-select the first available protein in the new one.
-            guard let newValue else { return }
-            let entries: [ProteinLibraryEntry] = (newValue == .curated)
-                ? libraryViewModel.curatedEntries
-                : libraryViewModel.importedEntries
-            let currentInCategory = libraryViewModel.categoryOfSelection == newValue
-            if !currentInCategory, let first = entries.first {
-                libraryViewModel.selectedProteinID = first.id
-            }
         }
         .alert(item: $libraryViewModel.activeAlert) { alert in
             Alert(title: Text("Protein Import Failed"), message: Text(alert.message), dismissButton: .default(Text("OK")))

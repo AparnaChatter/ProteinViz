@@ -42,22 +42,6 @@ struct ProteinLibraryEntry: Identifiable, Hashable {
     }
 }
 
-// MARK: - Library Category
-
-enum LibraryCategory: String, CaseIterable, Identifiable, Hashable {
-    case curated = "Curated Library"
-    case imported = "My Files"
-
-    var id: String { rawValue }
-
-    var systemImage: String {
-        switch self {
-        case .curated: return "books.vertical.fill"
-        case .imported: return "tray.full"
-        }
-    }
-}
-
 // MARK: - Library View Model
 
 @MainActor
@@ -100,15 +84,6 @@ final class ProteinLibraryViewModel: ObservableObject {
         proteins.filter {
             if case .imported = $0.kind { return true }
             return false
-        }
-    }
-
-    /// Returns the category that owns the currently-selected protein, or nil if nothing is selected.
-    var categoryOfSelection: LibraryCategory? {
-        guard let entry = selectedEntry else { return nil }
-        switch entry.kind {
-        case .curated: return .curated
-        case .imported: return .imported
         }
     }
 
@@ -173,28 +148,12 @@ final class ProteinLibraryViewModel: ObservableObject {
     }
 }
 
-// MARK: - Category Sidebar (column 1)
+// MARK: - Library Sidebar (single column, nested DisclosureGroups)
 
-struct CategorySidebar: View {
-    @Binding var selection: LibraryCategory?
-
-    var body: some View {
-        List(selection: $selection) {
-            ForEach(LibraryCategory.allCases) { category in
-                Label(category.rawValue, systemImage: category.systemImage)
-                    .tag(category)
-            }
-        }
-        .listStyle(.sidebar)
-        .navigationTitle("ProteinViz")
-    }
-}
-
-// MARK: - Protein List (column 2)
-
-struct ProteinListView: View {
-    let category: LibraryCategory
+struct LibrarySidebar: View {
     @ObservedObject var viewModel: ProteinLibraryViewModel
+    /// Tracks which groups the user has collapsed. Default empty = every group expanded.
+    @State private var collapsedGroups: Set<String> = []
     @State private var isPresentingImporter = false
     @State private var missingEntryForInstructions: CuratedProteinEntry?
 
@@ -202,82 +161,129 @@ struct ProteinListView: View {
         UTType(filenameExtension: "pdb") ?? .data
     }
 
+    /// Canonical display order for biological function classes. Unknown classes fall to the
+    /// end alphabetically.
+    private static let functionClassOrder: [String] = [
+        "Catalytic",
+        "Structural",
+        "Transport",
+        "Hormonal",
+        "Defense",
+        "Contractile",
+        "Regulatory",
+        "Reporter",
+        "Storage",
+        "Other"
+    ]
+
     var body: some View {
         List(selection: $viewModel.selectedProteinID) {
-            switch category {
-            case .curated:
-                if !viewModel.curatedEntries.isEmpty {
-                    Section("Available") {
-                        ForEach(viewModel.curatedEntries) { entry in
-                            curatedRow(for: entry).tag(entry.id)
-                        }
-                    }
-                }
-                if !viewModel.missingCuratedEntries.isEmpty {
-                    Section("Not bundled") {
-                        ForEach(viewModel.missingCuratedEntries) { entry in
-                            missingRow(for: entry)
-                        }
-                    }
-                }
-                if viewModel.curatedEntries.isEmpty && viewModel.missingCuratedEntries.isEmpty {
-                    ContentUnavailableView("No curated entries", systemImage: "books.vertical", description: Text("curated.json was not found or had no proteins."))
-                }
-            case .imported:
-                if viewModel.importedEntries.isEmpty {
-                    ContentUnavailableView(
-                        "No imports yet",
-                        systemImage: "tray",
-                        description: Text("Tap Import PDB below to load a structure from Files.")
-                    )
-                } else {
-                    ForEach(viewModel.importedEntries) { entry in
-                        importedRow(for: entry).tag(entry.id)
-                    }
-                }
-            }
+            curatedDisclosure
+            importedDisclosure
         }
-        .listStyle(.insetGrouped)
-        .navigationTitle(category.rawValue)
-        .navigationBarTitleDisplayMode(.inline)
+        .listStyle(.sidebar)
+        .navigationTitle("ProteinViz")
         .safeAreaInset(edge: .bottom) {
-            if category == .imported {
-                importButton
-            }
+            importButton
         }
         .sheet(item: $missingEntryForInstructions) { entry in
             MissingCuratedSheet(entry: entry)
         }
     }
 
+    // MARK: - Top-level disclosure groups
+
+    private var curatedDisclosure: some View {
+        DisclosureGroup(isExpanded: binding(for: "group:curated")) {
+            ForEach(groupedCurated, id: \.0) { className, entries in
+                DisclosureGroup(isExpanded: binding(for: "class:\(className)")) {
+                    ForEach(entries) { entry in
+                        curatedRow(for: entry).tag(entry.id)
+                    }
+                } label: {
+                    Text(className)
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+            if !viewModel.missingCuratedEntries.isEmpty {
+                DisclosureGroup(isExpanded: binding(for: "group:notBundled")) {
+                    ForEach(viewModel.missingCuratedEntries) { entry in
+                        missingRow(for: entry)
+                    }
+                } label: {
+                    Text("Not bundled")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        } label: {
+            Label("Curated Library", systemImage: "books.vertical.fill")
+                .font(.headline)
+        }
+    }
+
+    private var importedDisclosure: some View {
+        DisclosureGroup(isExpanded: binding(for: "group:imported")) {
+            if viewModel.importedEntries.isEmpty {
+                Text("No imported PDB files yet. Tap Import below.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(viewModel.importedEntries) { entry in
+                    importedRow(for: entry).tag(entry.id)
+                }
+            }
+        } label: {
+            Label("My Files", systemImage: "tray.full")
+                .font(.headline)
+        }
+    }
+
+    // MARK: - Grouping
+
+    private func functionClassKey(for entry: ProteinLibraryEntry) -> String {
+        entry.curatedEntry?.functionClass ?? "Other"
+    }
+
+    private var groupedCurated: [(String, [ProteinLibraryEntry])] {
+        let grouped = Dictionary(grouping: viewModel.curatedEntries, by: functionClassKey)
+        let knownOrdered: [(String, [ProteinLibraryEntry])] = Self.functionClassOrder.compactMap { cls in
+            guard let entries = grouped[cls], !entries.isEmpty else { return nil }
+            return (cls, entries.sorted { $0.displayName < $1.displayName })
+        }
+        let knownSet = Set(Self.functionClassOrder)
+        let extras = grouped
+            .filter { !knownSet.contains($0.key) }
+            .sorted { $0.key < $1.key }
+            .map { ($0.key, $0.value.sorted { $0.displayName < $1.displayName }) }
+        return knownOrdered + extras
+    }
+
     // MARK: - Rows
 
     private func curatedRow(for entry: ProteinLibraryEntry) -> some View {
         let curated = entry.curatedEntry
-        return VStack(alignment: .leading, spacing: 4) {
+        return VStack(alignment: .leading, spacing: 2) {
             Text(entry.displayName)
-                .font(.headline)
+                .font(.body)
             if let curated {
                 Text(curated.category)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.tint)
-                Text(curated.summary)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 1)
     }
 
     private func importedRow(for entry: ProteinLibraryEntry) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(entry.displayName)
-                .font(.headline)
+                .font(.body)
             Text(entry.protein.pdbID ?? "\(entry.protein.atomCount) atoms")
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
+        .padding(.vertical, 1)
     }
 
     private func missingRow(for entry: CuratedProteinEntry) -> some View {
@@ -285,23 +291,25 @@ struct ProteinListView: View {
             missingEntryForInstructions = entry
         } label: {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(entry.displayName)
-                        .font(.headline)
+                        .font(.body)
                         .foregroundStyle(.secondary)
-                    Text("Tap to bundle \(entry.fileName)")
-                        .font(.caption)
+                    Text("Bundle \(entry.fileName) to enable")
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .opacity(0.7)
                 }
                 Spacer()
                 Image(systemName: "tray.and.arrow.down")
-                    .font(.callout)
+                    .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .buttonStyle(.plain)
     }
+
+    // MARK: - Import
 
     private var importButton: some View {
         Button {
@@ -328,6 +336,21 @@ struct ProteinListView: View {
             }
         }
     }
+
+    // MARK: - Collapsed-group bookkeeping
+
+    private func binding(for key: String) -> Binding<Bool> {
+        Binding(
+            get: { !collapsedGroups.contains(key) },
+            set: { isOpen in
+                if isOpen {
+                    collapsedGroups.remove(key)
+                } else {
+                    collapsedGroups.insert(key)
+                }
+            }
+        )
+    }
 }
 
 // MARK: - Missing Curated Sheet
@@ -351,7 +374,7 @@ private struct MissingCuratedSheet: View {
                     Text("1. Download the PDB file from RCSB (\(entry.pdbID)).")
                     Text("2. Rename the file to **\(entry.fileName)**.")
                     Text("3. Drag it into the **Resources/** group in Xcode and check the ProteinViz target.")
-                    Text("4. Rebuild and relaunch — the entry will move into the Available section.")
+                    Text("4. Rebuild and relaunch — the entry will move into the active Curated section.")
                 }
 
                 Section("Links") {

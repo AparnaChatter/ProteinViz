@@ -13,7 +13,6 @@ struct ProteinDetailView: View {
     @ObservedObject var gestureHandler: GestureHandler
     @ObservedObject var annotationStore: AnnotationStore
     let curatedEntry: CuratedProteinEntry?
-    @Binding var columnVisibility: NavigationSplitViewVisibility
     @State private var representationMode: RepresentationMode = .spheres
     @State private var colorMode: ColorMode = .cpk
     @State private var isLegendExpanded = true
@@ -43,6 +42,15 @@ struct ProteinDetailView: View {
                 renderer: renderer
             )
             .allowsHitTesting(true)
+
+            if showLigands && !protein.ligandInstances.isEmpty {
+                LigandLabelsOverlay(
+                    protein: protein,
+                    gestureHandler: gestureHandler,
+                    renderer: renderer
+                )
+                .allowsHitTesting(false)
+            }
         }
         .navigationTitle(protein.name)
         .overlay(alignment: .bottomLeading) {
@@ -58,21 +66,6 @@ struct ProteinDetailView: View {
             }
         }
         .toolbar {
-            ToolbarItemGroup(placement: .topBarLeading) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        columnVisibility = (columnVisibility == .detailOnly) ? .all : .detailOnly
-                    }
-                } label: {
-                    Label(
-                        columnVisibility == .detailOnly ? "Show Sidebar" : "Hide Sidebar",
-                        systemImage: columnVisibility == .detailOnly
-                            ? "sidebar.leading"
-                            : "rectangle.righthalf.inset.filled.arrow.right"
-                    )
-                }
-            }
-
             ToolbarItemGroup(placement: .topBarTrailing) {
                 if curatedEntry != nil {
                     Button {

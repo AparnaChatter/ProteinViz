@@ -385,6 +385,14 @@ final class MetalRenderer: NSObject, ObservableObject {
         return picked
     }
 
+    /// Projects a position in the protein's original Ångström coordinate space (i.e. as it
+    /// appears in the PDB file) to a screen point. Convenience over `projectToScreen` that
+    /// applies the renderer's centering + normalization first.
+    func projectProteinPointToScreen(_ proteinPosition: SIMD3<Float>, viewSize: CGSize) -> CGPoint? {
+        let normalized = (proteinPosition - proteinCenter) * proteinScale
+        return projectToScreen(normalizedWorldPosition: normalized, viewSize: viewSize)
+    }
+
     /// Projects a position in normalized protein space to a screen point, or nil if behind the camera / off-screen in depth.
     func projectToScreen(normalizedWorldPosition: SIMD3<Float>, viewSize: CGSize) -> CGPoint? {
         guard viewSize.width > 0, viewSize.height > 0 else { return nil }

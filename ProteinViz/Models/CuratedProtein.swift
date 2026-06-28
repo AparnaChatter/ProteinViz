@@ -24,6 +24,9 @@ struct CuratedProteinEntry: Codable, Hashable, Identifiable {
     let initialRotationDegrees: [Float]?
     let initialZoom: Float?
     let tryThis: String?
+    /// High-level biological function class (Catalytic, Structural, Transport, Hormonal,
+    /// Defense, Contractile, Regulatory, Reporter, Storage, Other). Drives sidebar grouping.
+    let functionClass: String?
 
     var id: String { pdbID }
 
@@ -38,6 +41,7 @@ struct CuratedProteinEntry: Codable, Hashable, Identifiable {
         case initialRotationDegrees = "initial_rotation_degrees"
         case initialZoom = "initial_zoom"
         case tryThis = "try_this"
+        case functionClass = "function_class"
     }
 
     /// Public RCSB structure page URL for this entry.

@@ -25,6 +25,20 @@ struct ProteinBoundingBox: Hashable, Sendable {
     }
 }
 
+// MARK: - Ligand Instance
+
+/// One discrete ligand residue (e.g. a heme group, an ATP molecule, a magnesium ion).
+/// Groups all atoms with the same chain / residueSeq / residueName and provides a centroid
+/// suitable for anchoring a floating label.
+struct LigandInstance: Identifiable, Hashable {
+    let residueName: String
+    let chainID: Character
+    let residueSeq: Int
+    let centroid: SIMD3<Float>
+
+    var id: String { "\(String(chainID))|\(residueSeq)|\(residueName)" }
+}
+
 // MARK: - Protein
 
 struct Protein: Hashable {
@@ -47,12 +61,31 @@ struct Protein: Hashable {
         var seen = Set<String>()
         var counts: [String: Int] = [:]
         for atom in atoms where atom.isLigand {
-            let key = "\(atom.chainID)|\(atom.residueSeq)|\(atom.residueName)"
+            let key = "\(String(atom.chainID))|\(atom.residueSeq)|\(atom.residueName)"
             guard !seen.contains(key) else { continue }
             seen.insert(key)
             counts[atom.residueName, default: 0] += 1
         }
         return counts
+    }
+
+    /// One LigandInstance per discrete ligand residue, with a centroid for label anchoring.
+    var ligandInstances: [LigandInstance] {
+        let grouped = Dictionary(grouping: atoms.filter { $0.isLigand }) { atom in
+            "\(String(atom.chainID))|\(atom.residueSeq)|\(atom.residueName)"
+        }
+        let instances: [LigandInstance] = grouped.compactMap { _, residueAtoms in
+            guard let first = residueAtoms.first else { return nil }
+            let sum = residueAtoms.reduce(SIMD3<Float>.zero) { $0 + $1.position }
+            let centroid = sum / Float(residueAtoms.count)
+            return LigandInstance(
+                residueName: first.residueName,
+                chainID: first.chainID,
+                residueSeq: first.residueSeq,
+                centroid: centroid
+            )
+        }
+        return instances.sorted { $0.id < $1.id }
     }
 
     static func empty(name: String = "Untitled Protein") -> Protein {

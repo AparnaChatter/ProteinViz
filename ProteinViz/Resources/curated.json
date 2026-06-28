@@ -4,6 +4,7 @@
     {
       "pdb_id": "4INS",
       "display_name": "Insulin",
+      "function_class": "Hormonal",
       "category": "Hormone",
       "summary": "Pancreatic peptide hormone that lowers blood glucose.",
       "function": "Insulin is secreted by pancreatic β-cells when blood glucose rises after a meal. It binds the insulin receptor on muscle, liver, and adipose cells, triggering GLUT4-mediated glucose uptake and stimulating glycogen and lipid storage. The mature hormone is a heterodimer of an A chain (21 residues) and a B chain (30 residues) joined by two interchain disulfide bonds, with a third intrachain disulfide stabilizing the A chain.",
@@ -16,6 +17,7 @@
     {
       "pdb_id": "2DHB",
       "display_name": "Hemoglobin (deoxy)",
+      "function_class": "Transport",
       "category": "Oxygen transport",
       "summary": "Erythrocyte oxygen carrier with cooperative O2 binding.",
       "function": "Hemoglobin transports oxygen from the lungs to peripheral tissues. Each tetramer (two α and two β subunits) carries four heme groups, each binding one O2. Cooperative binding produces the sigmoidal saturation curve — binding at one heme increases the affinity of the others, shifting the structure between the low-affinity T (tense, deoxy) and high-affinity R (relaxed, oxy) states.",
@@ -28,6 +30,7 @@
     {
       "pdb_id": "2LYZ",
       "display_name": "Lysozyme",
+      "function_class": "Catalytic",
       "category": "Enzyme",
       "summary": "Antibacterial enzyme found in tears, saliva, and egg white.",
       "function": "Lysozyme hydrolyzes the β(1→4) glycosidic bond between N-acetylmuramic acid and N-acetylglucosamine in bacterial peptidoglycan, lysing Gram-positive cell walls. It was the first enzyme to have its three-dimensional structure determined by X-ray crystallography (Phillips, 1965) and remains the canonical teaching example of an enzyme active site.",
@@ -40,6 +43,7 @@
     {
       "pdb_id": "1UBQ",
       "display_name": "Ubiquitin",
+      "function_class": "Regulatory",
       "category": "Signaling",
       "summary": "76-residue tag that marks substrates for proteasomal destruction.",
       "function": "Ubiquitin is conjugated to lysine side chains on target proteins through the E1/E2/E3 enzyme cascade. Polyubiquitin chains linked through Lys48 mark the substrate for proteasomal degradation; chains linked through Lys63 mediate signaling and DNA repair. Ubiquitin's compact β-grasp fold is exceptionally stable and is the canonical model system for protein folding studies.",
@@ -52,6 +56,7 @@
     {
       "pdb_id": "1EMA",
       "display_name": "Green Fluorescent Protein",
+      "function_class": "Reporter",
       "category": "Biotechnology",
       "summary": "Auto-fluorescent β-barrel from the jellyfish Aequorea victoria.",
       "function": "GFP absorbs blue light and re-emits green via an internally formed chromophore (Ser-Tyr-Gly that autocatalytically cyclizes after folding). The eleven-strand β-barrel rigidly surrounds and protects the chromophore — no external cofactors are required. GFP and its color variants are the foundation of live-cell imaging and earned the 2008 Nobel Prize in Chemistry.",
@@ -64,6 +69,7 @@
     {
       "pdb_id": "7FAB",
       "display_name": "Antibody Fab Fragment",
+      "function_class": "Defense",
       "category": "Immunology",
       "summary": "Antigen-binding arm of an immunoglobulin G.",
       "function": "The Fab fragment is one of the two antigen-binding arms of an antibody: a light chain (VL + CL) paired with the N-terminal half of a heavy chain (VH + CH1). Antigen specificity comes from six complementarity-determining region (CDR) loops at the tip of VH and VL. The same architecture underlies modern therapeutic antibodies including trastuzumab, pembrolizumab, and broadly neutralizing anti-HIV antibodies.",
@@ -76,6 +82,7 @@
     {
       "pdb_id": "1RTD",
       "display_name": "HIV-1 Reverse Transcriptase",
+      "function_class": "Catalytic",
       "category": "Antiviral target",
       "summary": "RNA-dependent DNA polymerase essential for HIV replication.",
       "function": "Reverse transcriptase (RT) copies HIV's single-stranded RNA genome into double-stranded DNA for integration into the host. It is a heterodimer of p66 (catalytic — polymerase and RNase H domains) and p51 (structural). RT is the target of the NRTI class (e.g. AZT, tenofovir, which mimic dNTPs) and the NNRTI class (e.g. efavirenz, which bind an allosteric pocket) used in modern combination antiretroviral therapy.",
@@ -88,6 +95,7 @@
     {
       "pdb_id": "1BMF",
       "display_name": "ATP Synthase F1",
+      "function_class": "Catalytic",
       "category": "Bioenergetics",
       "summary": "Rotary motor that synthesizes ATP from ADP and inorganic phosphate.",
       "function": "F1 is the catalytic head of mitochondrial (and bacterial) ATP synthase. Proton flow through the membrane-embedded F0 portion drives rotation of the central γ subunit; this rotation cycles each of the three catalytic β subunits through binding, synthesis, and release states — Boyer's binding-change mechanism. Each full rotation produces three ATP molecules.",
@@ -100,6 +108,7 @@
     {
       "pdb_id": "2MYS",
       "display_name": "Myosin Motor Domain (S1)",
+      "function_class": "Contractile",
       "category": "Motility",
       "summary": "Actin-binding head of the muscle motor protein myosin II.",
       "function": "The myosin S1 fragment contains the ATP-binding site and the actin-binding interface — the catalytic core that drives muscle contraction. ATP hydrolysis is mechanically coupled to a large conformational change in the converter domain and lever arm, producing the power stroke that walks along actin filaments. The same architecture underlies non-muscle myosin II's role in cytokinesis and cell migration.",
@@ -112,6 +121,7 @@
     {
       "pdb_id": "1J6Z",
       "display_name": "G-Actin Monomer",
+      "function_class": "Contractile",
       "category": "Cytoskeleton",
       "summary": "Monomeric building block of microfilaments.",
       "function": "Globular (G-)actin polymerizes head-to-tail into double-helical filaments (F-actin) that form the cytoskeletal microfilament network and the thin filaments of muscle sarcomeres. Polymerization is regulated by nucleotide state (ATP-actin assembles, ADP-actin disassembles) and by accessory proteins including profilin, cofilin, the Arp2/3 complex, and formins.",
